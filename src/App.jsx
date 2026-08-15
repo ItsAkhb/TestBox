@@ -1,5 +1,4 @@
 import {
-  BrowserRouter,
   Routes,
   Route,
 } from "react-router-dom";
@@ -31,7 +30,7 @@ import "./App.css";
 
 
 
-function AppContent() {
+function App() {
 
   const {
     loading,
@@ -47,12 +46,14 @@ function AppContent() {
 
   return (
     <>
+
       <CloudSyncManager />
 
 
       <Layout>
 
         <Routes>
+
 
           <Route
             path="/"
@@ -129,20 +130,8 @@ function AppContent() {
         </Routes>
 
       </Layout>
+
     </>
-  );
-}
-
-
-
-function App() {
-
-  return (
-    <BrowserRouter>
-
-      <AppContent />
-
-    </BrowserRouter>
   );
 }
 
