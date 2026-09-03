@@ -1,0 +1,39 @@
+{
+  // electron-builder config (JSON5 so comments survive)
+  appId: "app.testbox.app",
+  productName: "TestBox",
+  directories: {
+    output: "release",
+    buildResources: "electron/assets",
+  },
+  // Use the Electron dist restored by npm install instead of the
+  // download+extract+rename path — the rename of the freshly extracted
+  // win-unpacked.tmp deterministically fails with EPERM on machines
+  // where Defender/Search indexes new files (handles on the tmp dir).
+  electronDist: "node_modules/electron/dist",
+  files: [
+    "dist/**/*",
+    "electron/main.cjs",
+    "package.json",
+  ],
+  // The renderer is pure static files; no production node_modules needed.
+  asar: true,
+  win: {
+    icon: "electron/assets/icon.ico",
+    target: [
+      { target: "nsis", arch: ["x64"] },
+      { target: "portable", arch: ["x64"] },
+    ],
+    artifactName: "TestBox-Setup-${version}.${ext}",
+  },
+  portable: {
+    artifactName: "TestBox-Portable-${version}.${ext}",
+  },
+  nsis: {
+    oneClick: false,
+    allowToChangeInstallationDirectory: true,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true,
+    shortcutName: "TestBox",
+  },
+}
