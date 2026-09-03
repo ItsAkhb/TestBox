@@ -7,7 +7,9 @@ import {
 const SyncContext =
   createContext(null);
 
-
+// Status model: idle (logged out) | syncing | synced | pending
+// (unsynced local changes, waiting for connectivity) | offline
+// (no connectivity, nothing pending) | error.
 export function SyncProvider({
   children,
 }) {

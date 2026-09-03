@@ -2,6 +2,7 @@ import {
   getFolders,
   getExams,
   getExamData,
+  getExamDataKey,
 
   saveFolders,
   saveExams,
@@ -24,6 +25,26 @@ import {
 
   setStorageUser,
   MAX_QUESTIONS,
+
+  getActivity,
+  saveActivity,
+  getActivityRange,
+  getAllActivity,
+  getAllActivityDates,
+  getSettings,
+  saveSettings,
+
+  getSubjects,
+  saveSubjects,
+  createSubject,
+  updateSubject,
+  deleteSubject,
+  getSubjectById,
+
+  getDirtyState,
+  hasPendingLocalChanges,
+  clearDirtySection,
+  setDirtySuppression,
 } from "./storage";
 
 
@@ -31,6 +52,7 @@ export {
   getFolders,
   getExams,
   getExamData,
+  getExamDataKey,
 
   saveFolders,
   saveExams,
@@ -53,4 +75,24 @@ export {
 
   setStorageUser,
   MAX_QUESTIONS,
+
+  getActivity,
+  saveActivity,
+  getActivityRange,
+  getAllActivity,
+  getAllActivityDates,
+  getSettings,
+  saveSettings,
+
+  getSubjects,
+  saveSubjects,
+  createSubject,
+  updateSubject,
+  deleteSubject,
+  getSubjectById,
+
+  getDirtyState,
+  hasPendingLocalChanges,
+  clearDirtySection,
+  setDirtySuppression,
 };

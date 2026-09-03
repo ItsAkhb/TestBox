@@ -2,6 +2,14 @@ const STORAGE_PREFIX = "testbox-";
 
 let currentUserId = null;
 
+// Suppresses dirty-marking while cloud code writes local storage
+// (uploads stay uploads; cloud→local pulls must not look like edits).
+let suppressDirty = false;
+
+export function setDirtySuppression(active) {
+  suppressDirty = Boolean(active);
+}
+
 
 // =========================================================
 // Storage Adapter
@@ -51,14 +59,124 @@ const THEME_KEY = `${STORAGE_PREFIX}theme`;
 
 export const MAX_QUESTIONS = 5000;
 
-const CURRENT_BACKUP_VERSION = 1;
+const CURRENT_BACKUP_VERSION = 2;
 
 function notifyLocalChange() {
   window.dispatchEvent(
     new CustomEvent(
       "testbox-local-change"
     )
-  );  
+  );
+}
+
+// =========================================================
+// Dirty Tracking (offline-first)
+//
+// Persistent registry of unsynced local mutations. Survives
+// restarts; the sync engine uploads dirty entries then clears
+// them. Cloud→local writes set suppressDirty so pulls never
+// look like local edits.
+// =========================================================
+
+function getDirtyKey() {
+  return `${getStoragePrefix()}dirty`;
+}
+
+function readDirty() {
+  const dirty = readJson(getDirtyKey(), null);
+  return dirty && isObject(dirty)
+    ? {
+        folders: Boolean(dirty.folders),
+        exams: Boolean(dirty.exams),
+        examData:
+          dirty.examData && isObject(dirty.examData)
+            ? dirty.examData
+            : {},
+        subjects: Boolean(dirty.subjects),
+        activity:
+          dirty.activity && isObject(dirty.activity)
+            ? dirty.activity
+            : {},
+        settings: Boolean(dirty.settings),
+        deletes: Array.isArray(dirty.deletes) ? dirty.deletes : [],
+      }
+    : {
+        folders: false,
+        exams: false,
+        examData: {},
+        subjects: false,
+        activity: {},
+        settings: false,
+        deletes: [],
+      };
+}
+
+function writeDirty(dirty) {
+  return writeJson(getDirtyKey(), dirty);
+}
+
+function markDirty(section, id = null) {
+  if (suppressDirty) return;
+  const dirty = readDirty();
+  if (section === "deletes") {
+    if (!Array.isArray(dirty.deletes)) dirty.deletes = [];
+    const signature = `${id.type}:${id.id}`;
+    if (!dirty.deletes.some((d) => `${d.type}:${d.id}` === signature)) {
+      dirty.deletes.push(id);
+    }
+  } else if (id == null) {
+    dirty[section] = true;
+  } else {
+    if (!isObject(dirty[section])) dirty[section] = {};
+    dirty[section][String(id)] = true;
+  }
+  writeDirty(dirty);
+}
+
+function clearDirty(section, ids = null) {
+  const dirty = readDirty();
+  if (section === "deletes") {
+    dirty.deletes = [];
+  } else if (ids == null) {
+    dirty[section] = section === "examData" || section === "activity" ? {} : false;
+  } else {
+    if (!isObject(dirty[section])) dirty[section] = {};
+    ids.forEach((id) => delete dirty[section][String(id)]);
+  }
+  writeDirty(dirty);
+}
+
+function hasDirtyChanges() {
+  const d = readDirty();
+  return (
+    d.folders ||
+    d.exams ||
+    d.subjects ||
+    d.settings ||
+    Object.keys(d.examData).length > 0 ||
+    Object.keys(d.activity).length > 0 ||
+    d.deletes.length > 0
+  );
+}
+
+function recordLocalDelete(type, id) {
+  if (suppressDirty) return;
+  markDirty("deletes", { type, id: String(id) });
+  // A local delete also dirties the owning collection so the cloud
+  // row for any resurrected/renamed entity is refreshed on next upload.
+  markDirty(type === "folder" ? "folders" : "exams", null);
+}
+
+export function getDirtyState() {
+  return readDirty();
+}
+
+export function hasPendingLocalChanges() {
+  return hasDirtyChanges();
+}
+
+export function clearDirtySection(section, ids = null) {
+  clearDirty(section, ids);
 }
 
 const DEFAULT_EXAM_DATA = {
@@ -67,6 +185,8 @@ const DEFAULT_EXAM_DATA = {
   marked: [],
   results: {},
   note: "",
+  answerKey: {},
+  examState: null,
 };
 
 // =========================================================
@@ -154,7 +274,7 @@ function removeKey(key) {
   }
 }
 
-function getExamDataKey(examId) {
+export function getExamDataKey(examId) {
   return `${getExamDataPrefix()}${examId}`;
 }
 
@@ -189,7 +309,13 @@ function isValidExam(exam) {
     Number(exam.questionCount) >= 1 &&
     Number(exam.questionCount) <=
       MAX_QUESTIONS &&
-    typeof exam.createdAt === "string"
+    typeof exam.createdAt === "string" &&
+    (exam.type === undefined ||
+     (typeof exam.type === "string" &&
+      (exam.type === "practice" || exam.type === "exam"))) &&
+    (exam.timerDuration === undefined ||
+     exam.timerDuration === null ||
+     (typeof exam.timerDuration === "number" && exam.timerDuration > 0))
   );
 }
 
@@ -241,6 +367,16 @@ function normalizeExamData(data) {
       typeof data.note === "string"
         ? data.note
         : "",
+
+    answerKey:
+      isObject(data.answerKey)
+        ? data.answerKey
+        : {},
+
+    examState:
+      isObject(data.examState) || data.examState === null
+        ? data.examState
+        : null,
   };
 }
 
@@ -268,10 +404,18 @@ export function saveFolders(folders) {
     return false;
   }
 
-  return writeJson(
+  const saved = writeJson(
     getFoldersKey(),
     folders
   );
+
+  if (saved && !suppressDirty) {
+    folders.forEach((folder) =>
+      markDirty("folders", folder.id)
+    );
+  }
+
+  return saved;
 }
 
 export function createFolder(folder) {
@@ -428,6 +572,8 @@ export function deleteFolder(
     removeExamData(exam.id);
   }
 
+  recordLocalDelete("folder", folderId);
+
   notifyLocalChange();
 
   return true;
@@ -463,10 +609,18 @@ export function saveExams(exams) {
     return false;
   }
 
-  return writeJson(
+  const saved = writeJson(
     getExamsKey(),
     exams
   );
+
+  if (saved && !suppressDirty) {
+    exams.forEach((exam) =>
+      markDirty("exams", exam.id)
+    );
+  }
+
+  return saved;
 }
 
 export function createExam(exam) {
@@ -643,6 +797,7 @@ export function deleteExam(examId) {
     );
 
   if (removed) {
+    recordLocalDelete("exam", examId);
     notifyLocalChange();
   }
 
@@ -710,6 +865,7 @@ export function saveExamData(
     );
 
   if (saved) {
+    markDirty("examData", examId);
     notifyLocalChange();
   }
 
@@ -723,8 +879,185 @@ export function removeExamData(
     return false;
   }
 
-  return removeKey(
+  const removed = removeKey(
     getExamDataKey(examId)
+  );
+
+  if (removed) {
+    markDirty("examData", examId);
+  }
+
+  return removed;
+}
+
+// =========================================================
+// Activity Storage
+// =========================================================
+
+// Activity storage - key format: testbox-activity-YYYY-MM-DD
+function getActivityKey(dateString) {
+  return `${getStoragePrefix()}activity-${dateString}`;
+}
+
+export function getActivity(dateString) {
+  if (typeof dateString !== "string") return null;
+  return readJson(getActivityKey(dateString), null);
+}
+
+export function saveActivity(dateString, activityData) {
+  if (typeof dateString !== "string" || !isObject(activityData)) return false;
+  const saved = writeJson(getActivityKey(dateString), activityData);
+  if (saved) markDirty("activity", dateString);
+  return saved;
+}
+
+export function getActivityRange(startDate, endDate) {
+  // Returns array of { date, activity } for each day in range
+  const results = [];
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const dateStr = `${y}-${m}-${day}`;
+    const activity = getActivity(dateStr);
+    if (activity) {
+      results.push({ date: dateStr, activity });
+    }
+  }
+  return results;
+}
+
+// List every locally stored activity day (for cloud sync)
+export function getAllActivityDates() {
+  const prefix = `${getStoragePrefix()}activity-`;
+  return storageAdapter
+    .keys()
+    .filter((key) => key.startsWith(prefix))
+    .map((key) => key.slice(prefix.length))
+    .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+    .sort();
+}
+
+export function getAllActivity() {
+  return getAllActivityDates()
+    .map((date) => ({ date, data: getActivity(date) }))
+    .filter((entry) => entry.data);
+}
+
+// =========================================================
+// Settings Storage
+// =========================================================
+
+const SETTINGS_KEY = `${getStoragePrefix()}settings`;
+
+const DEFAULT_SETTINGS = {
+  language: "fa",
+  weatherLocation: { lat: 35.6892, lon: 51.3890, name: "Tehran" },
+};
+
+export function getSettings() {
+  return readJson(SETTINGS_KEY, DEFAULT_SETTINGS);
+}
+
+export function saveSettings(settings) {
+  if (!isObject(settings)) return false;
+  const merged = { ...DEFAULT_SETTINGS, ...settings };
+  const saved = writeJson(SETTINGS_KEY, merged);
+  if (saved) markDirty("settings", null);
+  return saved;
+}
+
+// =========================================================
+// Subjects Storage
+// =========================================================
+
+function getSubjectsKey() {
+  return `${getStoragePrefix()}subjects`;
+}
+
+function isValidSubject(subject) {
+  return (
+    isObject(subject) &&
+    isValidId(subject.id) &&
+    typeof subject.name === "string" &&
+    subject.name.trim() !== ""
+  );
+}
+
+export function getSubjects() {
+  const subjects = readJson(getSubjectsKey(), []);
+  return Array.isArray(subjects) ? subjects : [];
+}
+
+export function saveSubjects(subjects) {
+  if (!Array.isArray(subjects) || !subjects.every(isValidSubject)) {
+    return false;
+  }
+  const saved = writeJson(getSubjectsKey(), subjects);
+  if (saved && !suppressDirty) {
+    markDirty("subjects", null);
+  }
+  return saved;
+}
+
+export function createSubject(subject) {
+  if (!isValidSubject(subject)) return false;
+  const subjects = getSubjects();
+  if (subjects.some((s) => idsEqual(s.id, subject.id))) return false;
+  const saved = saveSubjects([...subjects, subject]);
+  if (saved) notifyLocalChange();
+  return saved;
+}
+
+export function updateSubject(subjectId, updates) {
+  if (!isValidId(subjectId) || !isObject(updates)) return false;
+  const subjects = getSubjects();
+  const index = subjects.findIndex((s) => idsEqual(s.id, subjectId));
+  if (index === -1) return false;
+  subjects[index] = { ...subjects[index], ...updates, id: subjects[index].id };
+  if (!isValidSubject(subjects[index])) return false;
+  const saved = saveSubjects(subjects);
+  if (saved) notifyLocalChange();
+  return saved;
+}
+
+// Deleting a subject does NOT delete its folders — they simply become
+// unassigned (subjectId: null), preserving all existing data.
+export function deleteSubject(subjectId) {
+  if (!isValidId(subjectId)) return false;
+
+  const subjects = getSubjects();
+  if (!subjects.some((s) => idsEqual(s.id, subjectId))) return false;
+
+  const remaining = subjects.filter((s) => !idsEqual(s.id, subjectId));
+  if (!saveSubjects(remaining)) return false;
+
+  // Unassign folders that referenced this subject
+  const folders = getFolders();
+  const affected = folders.filter(
+    (f) => f.subjectId != null && idsEqual(f.subjectId, subjectId)
+  );
+  if (affected.length > 0) {
+    const updatedFolders = folders.map((f) =>
+      f.subjectId != null && idsEqual(f.subjectId, subjectId)
+        ? { ...f, subjectId: null }
+        : f
+    );
+    saveFolders(updatedFolders);
+  }
+
+  markDirty("subjects", subjectId);
+  notifyLocalChange();
+  return true;
+}
+
+// Resolve a subject name by id; returns null when unknown
+export function getSubjectById(subjectId) {
+  if (!isValidId(subjectId)) return null;
+  return (
+    getSubjects().find((s) => idsEqual(s.id, subjectId)) || null
   );
 }
 
@@ -758,6 +1091,7 @@ export function createBackup() {
     folders,
     exams,
     examData,
+    subjects: getSubjects(),
   };
 }
 
@@ -906,6 +1240,32 @@ export function validateBackup(
 function migrateBackup(
   backup
 ) {
+  if (backup.version === 1) {
+    // v1 -> v2: add type, answerKey, and examState to exam data
+    const migratedBackup = {
+      ...backup,
+      version: 2,
+    };
+
+    // Add type: "practice" to exams that don't have it
+    migratedBackup.exams = backup.exams.map(exam => ({
+      ...exam,
+      type: exam.type || "practice",
+    }));
+
+    // Add answerKey and examState to exam data
+    migratedBackup.examData = {};
+    for (const [key, value] of Object.entries(backup.examData)) {
+      migratedBackup.examData[key] = {
+        ...value,
+        answerKey: isObject(value?.answerKey) ? value.answerKey : {},
+        examState: isObject(value?.examState) || value?.examState === null ? value.examState : null,
+      };
+    }
+
+    return migratedBackup;
+  }
+
   return backup;
 }
 
@@ -977,6 +1337,31 @@ export function restoreBackup(
       }
     }
 
+    // Restore subjects (optional field — older backups may not have it)
+    if (
+      Array.isArray(migratedBackup.subjects) &&
+      migratedBackup.subjects.length > 0
+    ) {
+      writeJson(getSubjectsKey(), migratedBackup.subjects);
+    }
+
+    // A restore replaces the whole local dataset: every entity is now
+    // unsynced and must re-upload on the next sync.
+    writeDirty({
+      folders: true,
+      exams: true,
+      examData: Object.fromEntries(
+        Object.keys(migratedBackup.examData).map((key) => [
+          key.slice(getExamDataPrefix().length),
+          true,
+        ])
+      ),
+      subjects: true,
+      activity: {},
+      settings: false,
+      deletes: [],
+    });
+
     return true;
   } catch (error) {
     console.error(
@@ -1001,6 +1386,24 @@ export function clearAll() {
             STORAGE_PREFIX
           ) &&
           key !== THEME_KEY
+      )
+      .forEach((key) => {
+        storageAdapter.removeItem(
+          key
+        );
+      });
+
+    // Also clear activity and settings keys
+    storageAdapter.keys()
+      .filter(
+        (key) =>
+          key.startsWith(
+            STORAGE_PREFIX
+          ) && (
+            key.includes("-activity-") ||
+            key.endsWith("-settings") ||
+            key.endsWith("-subjects")
+          )
       )
       .forEach((key) => {
         storageAdapter.removeItem(
