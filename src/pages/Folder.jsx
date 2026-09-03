@@ -11,11 +11,97 @@ import {
   updateExam,
   moveExam,
   deleteExam,
+  getExamDataKey,
   MAX_QUESTIONS,
 } from "../services/dataService";
+import { useTranslation } from "../i18n";
+import { useToast } from "../context/ToastContext";
+import { computeFormQuestionNumbers } from "../services/scoring";
+import Icon from "../components/ui/Icon";
+import Modal from "../components/ui/Modal";
+
+const ANSWER_OPTIONS = ["1", "2", "3", "4"];
+const QUESTIONS_PER_PAGE = 50;
+
+function AnswerKeyGrid({ questionCount, customNumbering, startNumber, useStep, step, answerKeyData, setAnswerKeyData }) {
+  const { t } = useTranslation();
+  const [akPage, setAkPage] = useState(1);
+
+  // Build question numbers array
+  const questionNumbers = useMemo(() => {
+    const count = Number(questionCount) || 0;
+    if (count < 1) return [];
+    if (customNumbering) {
+      const start = Number(startNumber);
+      const s = useStep ? Number(step) : 1;
+      if (!Number.isInteger(start) || !Number.isInteger(s) || s < 1) return [];
+      return Array.from({ length: count }, (_, i) => start + i * s);
+    }
+    return Array.from({ length: count }, (_, i) => i + 1);
+  }, [questionCount, customNumbering, startNumber, useStep, step]);
+
+  const totalPages = Math.ceil(questionNumbers.length / QUESTIONS_PER_PAGE);
+  const visibleNumbers = questionNumbers.slice(
+    (akPage - 1) * QUESTIONS_PER_PAGE,
+    akPage * QUESTIONS_PER_PAGE
+  );
+
+  function toggleAnswer(qNum, option) {
+    setAnswerKeyData((prev) => {
+      const next = { ...prev };
+      if (String(next[qNum]) === String(option)) {
+        delete next[qNum];
+      } else {
+        next[qNum] = option;
+      }
+      return next;
+    });
+  }
+
+  if (questionNumbers.length === 0) return null;
+
+  return (
+    <div className="answer-key-grid-container">
+      <div className="answer-key-grid">
+        {visibleNumbers.map((qNum) => (
+          <div key={qNum} className="answer-key-row">
+            <span className="answer-key-qnum">{qNum}</span>
+            <div className="answer-key-options">
+              {ANSWER_OPTIONS.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  className={`answer-key-btn ${String(answerKeyData[qNum]) === opt ? "selected" : ""}`}
+                  onClick={() => toggleAnswer(qNum, opt)}
+                  title={`${t("exam.answerKey.q")} ${qNum} → ${opt}`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {totalPages > 1 && (
+        <div className="answer-key-pagination">
+          <button type="button" className="secondary-button" disabled={akPage === 1} onClick={() => setAkPage((p) => p - 1)}>
+            ← {t("exam.pagination.previous")}
+          </button>
+          <span>{t("exam.pagination.page")} {akPage} {t("exam.pagination.of")} {totalPages}</span>
+          <button type="button" className="secondary-button" disabled={akPage === totalPages} onClick={() => setAkPage((p) => p + 1)}>
+            {t("exam.pagination.next")} →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Folder() {
   const { id } = useParams();
+  const { t } = useTranslation();
+  const { showToast } = useToast();
 
   const [dataVersion, setDataVersion] =
     useState(0);
@@ -54,6 +140,18 @@ function Folder() {
     setNegativeMarking,
   ] = useState(true);
 
+  const [examType, setExamType] =
+    useState("practice");
+
+  const [timerDuration, setTimerDuration] =
+    useState("60");
+
+  const [stopwatchEnabled, setStopwatchEnabled] =
+    useState(false);
+
+  const [answerKeyData, setAnswerKeyData] =
+    useState({});
+
   const folders = useMemo(() => {
     return getFolders();
   }, [dataVersion]);
@@ -79,6 +177,20 @@ function Folder() {
     );
   }, [id, dataVersion]);
 
+  // Effective question numbers for the open form — the answer-key grid
+  // and the save path both consume this, so custom numbering can never
+  // fall back to the raw (hidden, empty) count input.
+  const effectiveNumbers = useMemo(() => {
+    return computeFormQuestionNumbers({
+      customNumbering,
+      questionCount,
+      startNumber,
+      endNumber,
+      useStep,
+      step,
+    });
+  }, [customNumbering, questionCount, startNumber, endNumber, useStep, step]);
+
   function refreshData() {
     setDataVersion(
       (value) => value + 1
@@ -94,6 +206,10 @@ function Folder() {
     setUseStep(false);
     setStep("1");
     setNegativeMarking(true);
+    setExamType("practice");
+    setTimerDuration("60");
+    setStopwatchEnabled(false);
+    setAnswerKeyData({});
   }
 
   function openCreateModal() {
@@ -134,6 +250,17 @@ function Folder() {
       exam.negativeMarking ?? true
     );
 
+    setExamType(exam.type || "practice");
+    setTimerDuration(String(exam.timerDuration || "60"));
+    setStopwatchEnabled(exam.stopwatchEnabled === true);
+    // Load existing answer key from exam data
+    try {
+      const data = JSON.parse(localStorage.getItem(getExamDataKey(exam.id)) || "{}");
+      setAnswerKeyData(data.answerKey || {});
+    } catch {
+      setAnswerKeyData({});
+    }
+
     setShowModal(true);
   }
 
@@ -148,8 +275,9 @@ function Folder() {
       examName.trim();
 
     if (!name) {
-      alert(
-        "اسم آزمون را وارد کن."
+      showToast(
+        t("exam.validation.nameRequired"),
+        "warning"
       );
       return;
     }
@@ -157,6 +285,20 @@ function Folder() {
     let count;
 
     if (customNumbering) {
+      // Blank inputs are not numbers (Number("") coerces to 0, which would
+      // silently create a phantom question 0).
+      if (
+        String(startNumber ?? "").trim() === "" ||
+        String(endNumber ?? "").trim() === "" ||
+        (useStep && String(step ?? "").trim() === "")
+      ) {
+        showToast(
+          t("exam.validation.numbersInvalid"),
+          "warning"
+        );
+        return;
+      }
+
       const start =
         Number(startNumber);
 
@@ -167,15 +309,17 @@ function Folder() {
         !Number.isInteger(start) ||
         !Number.isInteger(end)
       ) {
-        alert(
-          "شماره شروع و پایان باید عدد صحیح باشند."
+        showToast(
+          t("exam.validation.numbersInvalid"),
+          "warning"
         );
         return;
       }
 
       if (end < start) {
-        alert(
-          "شماره پایان نمی‌تواند از شماره شروع کمتر باشد."
+        showToast(
+          t("exam.validation.endBeforeStart"),
+          "warning"
         );
         return;
       }
@@ -191,8 +335,9 @@ function Folder() {
         ) ||
         currentStep < 1
       ) {
-        alert(
-          "ضریب شماره‌گذاری باید حداقل ۱ باشد."
+        showToast(
+          t("exam.validation.stepInvalid"),
+          "warning"
         );
         return;
       }
@@ -212,8 +357,9 @@ function Folder() {
         !Number.isInteger(count) ||
         count < 1
       ) {
-        alert(
-          "تعداد تست باید حداقل ۱ باشد."
+        showToast(
+          t("exam.validation.countMin"),
+          "warning"
         );
         return;
       }
@@ -223,11 +369,23 @@ function Folder() {
       count >
       MAX_QUESTIONS
     ) {
-      alert(
-        `تعداد تست نمی‌تواند بیشتر از ${MAX_QUESTIONS} باشد.`
+      showToast(
+        `${t("exam.validation.countMax")} ${MAX_QUESTIONS} باشد.`,
+        "warning"
       );
       return;
     }
+
+    // Drop key entries for questions that no longer exist (e.g. the
+    // numbering was changed after keys were set). Only current numbers
+    // are persisted, so reload/edit/scoring all see the same identifiers.
+    const allowedNumbers = new Set(effectiveNumbers);
+    const prunedKeyData = {};
+    Object.entries(answerKeyData || {}).forEach(([qNum, opt]) => {
+      if (allowedNumbers.has(Number(qNum))) {
+        prunedKeyData[qNum] = opt;
+      }
+    });
 
     if (editingExam) {
       const updated =
@@ -270,14 +428,31 @@ function Folder() {
                 : 1,
 
             negativeMarking,
+
+            type: examType,
+            timerDuration: examType === "exam" ? Number(timerDuration) : null,
+            stopwatchEnabled: examType === "practice" ? stopwatchEnabled : false,
           }
         );
 
       if (!updated) {
-        alert(
-          "ذخیره تغییرات آزمون انجام نشد."
+        showToast(
+          t("exam.validation.updateFailed"),
+          "error"
         );
         return;
+      }
+
+      // Save answer key for exam type
+      if (examType === "exam" && Object.keys(prunedKeyData).length > 0) {
+        try {
+          const key = getExamDataKey(editingExam.id);
+          const existing = JSON.parse(localStorage.getItem(key) || "{}");
+          existing.answerKey = prunedKeyData;
+          localStorage.setItem(key, JSON.stringify(existing));
+        } catch {
+          // non-fatal: answer key was set in-memory via modal state
+        }
       }
     } else {
       const newExam = {
@@ -320,6 +495,10 @@ function Folder() {
 
         negativeMarking,
 
+        type: examType,
+        timerDuration: examType === "exam" ? Number(timerDuration) : null,
+        stopwatchEnabled: examType === "practice" ? stopwatchEnabled : false,
+
         createdAt:
           new Date().toISOString(),
       };
@@ -330,10 +509,23 @@ function Folder() {
         );
 
       if (!created) {
-        alert(
-          "ساخت آزمون انجام نشد."
+        showToast(
+          t("exam.validation.createFailed"),
+          "error"
         );
         return;
+      }
+
+      // Save answer key for exam type
+      if (examType === "exam" && Object.keys(prunedKeyData).length > 0) {
+        try {
+          const key = getExamDataKey(newExam.id);
+          const existing = JSON.parse(localStorage.getItem(key) || "{}");
+          existing.answerKey = prunedKeyData;
+          localStorage.setItem(key, JSON.stringify(existing));
+        } catch {
+          // non-fatal: answer key was set in-memory via modal state
+        }
       }
     }
 
@@ -344,7 +536,7 @@ function Folder() {
   function handleDeleteExam(exam) {
     const confirmed =
       window.confirm(
-        `آزمون «${exam.name}» حذف شود؟`
+        `${t("exam.delete.confirm")} «${exam.name}»`
       );
 
     if (!confirmed) {
@@ -357,8 +549,9 @@ function Folder() {
       );
 
     if (!deleted) {
-      alert(
-        "حذف آزمون انجام نشد."
+      showToast(
+        t("exam.delete.failed"),
+        "error"
       );
       return;
     }
@@ -377,8 +570,9 @@ function Folder() {
     if (
       otherFolders.length === 0
     ) {
-      alert(
-        "فولدر دیگری برای انتقال وجود ندارد."
+      showToast(
+        t("exam.move.noFolder"),
+        "warning"
       );
       return;
     }
@@ -393,7 +587,7 @@ function Folder() {
 
     const answer =
       prompt(
-        `آزمون را به کدام فولدر منتقل کنیم؟\n\n${choices}\n\nشماره فولدر را وارد کن:`
+        `${t("exam.move.prompt")}\n\n${choices}\n\n${t("exam.move.selectNumber")}`
       );
 
     if (!answer) {
@@ -408,8 +602,9 @@ function Folder() {
       index >=
         otherFolders.length
     ) {
-      alert(
-        "شماره وارد شده معتبر نیست."
+      showToast(
+        t("exam.move.invalid"),
+        "warning"
       );
       return;
     }
@@ -424,8 +619,9 @@ function Folder() {
       );
 
     if (!moved) {
-      alert(
-        "انتقال آزمون انجام نشد."
+      showToast(
+        t("exam.move.failed"),
+        "error"
       );
       return;
     }
@@ -440,22 +636,22 @@ function Folder() {
         <div className="empty-state">
 
           <div className="empty-icon">
-            📁
+            <Icon name="folder" size={26} />
           </div>
 
           <h3>
-            فولدر پیدا نشد
+            {t("folder.notFound")}
           </h3>
 
           <p>
-            این فولدر وجود ندارد یا حذف شده است.
+            {t("folder.notFoundDescription")}
           </p>
 
           <Link
             to="/folders"
             className="primary-button"
           >
-            ← بازگشت به فولدرها
+            {t("folder.backToFolders")}
           </Link>
 
         </div>
@@ -475,13 +671,13 @@ function Folder() {
             to="/folders"
             className="back-link"
           >
-            ← فولدرها
+            {t("folder.back")}
           </Link>
 
           <div className="folder-heading-row">
 
             <div className="folder-heading-icon">
-              📁
+              <Icon name="folder" size={22} />
             </div>
 
             <div>
@@ -490,7 +686,7 @@ function Folder() {
               </h1>
 
               <p>
-                {exams.length} آزمون
+                {exams.length} {t("folder.examsCount")}
               </p>
             </div>
 
@@ -504,8 +700,8 @@ function Folder() {
             openCreateModal
           }
         >
-          <span>＋</span>
-          آزمون جدید
+          <Icon name="plus" size={16} />
+          {t("folder.newExam")}
         </button>
 
       </div>
@@ -515,15 +711,15 @@ function Folder() {
         <div className="empty-state folder-empty-state">
 
           <div className="empty-icon">
-            📝
+            <Icon name="fileText" size={24} />
           </div>
 
           <h3>
-            هنوز آزمونی در این فولدر نیست
+            {t("folder.empty.title")}
           </h3>
 
           <p>
-            اولین آزمون را بساز و پاسخ‌برگش را شروع کن.
+            {t("folder.empty.description")}
           </p>
 
           <button
@@ -532,8 +728,8 @@ function Folder() {
               openCreateModal
             }
           >
-            <span>＋</span>
-            ساخت آزمون
+            <Icon name="plus" size={16} />
+            {t("folder.empty.action")}
           </button>
 
         </div>
@@ -555,7 +751,7 @@ function Folder() {
               >
 
                 <div className="exam-list-icon">
-                  📝
+                  <Icon name="fileText" size={20} />
                 </div>
 
                 <div className="exam-list-info">
@@ -567,7 +763,7 @@ function Folder() {
                   <div className="exam-list-meta">
 
                     <span>
-                      {exam.questionCount} تست
+                      {exam.questionCount} {t("exam.questionCount")}
                     </span>
 
                     {exam.customNumbering && (
@@ -577,7 +773,7 @@ function Folder() {
                         </span>
 
                         <span>
-                          شماره‌گذاری سفارشی
+                          {t("exam.customNumbering")}
                         </span>
                       </>
                     )}
@@ -589,7 +785,7 @@ function Folder() {
                         </span>
 
                         <span>
-                          نمره منفی
+                          {t("exam.negativeMarking")}
                         </span>
                       </>
                     )}
@@ -599,7 +795,7 @@ function Folder() {
                 </div>
 
                 <span className="exam-list-arrow">
-                  ←
+                  <Icon name="arrowBack" size={15} />
                 </span>
 
               </Link>
@@ -608,41 +804,41 @@ function Folder() {
 
                 <button
                   type="button"
-                  title="ویرایش"
-                  aria-label="ویرایش آزمون"
+                  title={t("common.edit")}
+                  aria-label={t("exam.edit.title")}
                   onClick={() =>
                     openEditModal(
                       exam
                     )
                   }
                 >
-                  ✏️
+                  <Icon name="pen" size={15} />
                 </button>
 
                 <button
                   type="button"
                   title="انتقال"
-                  aria-label="انتقال آزمون"
+                  aria-label={t("exam.move.prompt")}
                   onClick={() =>
                     handleMoveExam(
                       exam
                     )
                   }
                 >
-                  📁
+                  <Icon name="folder" size={15} />
                 </button>
 
                 <button
                   type="button"
-                  title="حذف"
-                  aria-label="حذف آزمون"
+                  title={t("common.delete")}
+                  aria-label={t("exam.delete.confirm")}
                   onClick={() =>
                     handleDeleteExam(
                       exam
                     )
                   }
                 >
-                  🗑️
+                  <Icon name="trash" size={15} />
                 </button>
 
               </div>
@@ -655,55 +851,17 @@ function Folder() {
 
       )}
 
-      {showModal && (
-
-        <div
-          className="modal-overlay"
-          onClick={
-            closeModal
-          }
-        >
-
-          <div
-            className="modal"
-            onClick={(event) =>
-              event.stopPropagation()
-            }
-          >
-
-            <div className="modal-header">
-
-              <div>
-                <h2>
-                  {editingExam
-                    ? "ویرایش آزمون"
-                    : "ساخت آزمون جدید"}
-                </h2>
-
-                <p>
-                  {editingExam
-                    ? "مشخصات آزمون را ویرایش کنید."
-                    : "مشخصات آزمون جدید را وارد کنید."}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                className="modal-close"
-                onClick={
-                  closeModal
-                }
-                aria-label="بستن"
-              >
-                ×
-              </button>
-
-            </div>
-
+      <Modal
+        open={showModal}
+        onClose={closeModal}
+        title={editingExam ? t("exam.edit.title") : t("exam.create.title")}
+        subtitle={editingExam ? t("exam.edit.description") : t("exam.create.description")}
+        size="lg"
+      >
             <div className="modal-form">
 
               <label>
-                نام آزمون
+                {t("exam.name.label")}
               </label>
 
               <input
@@ -713,14 +871,110 @@ function Folder() {
                     event.target.value
                   )
                 }
-                placeholder="مثلاً آزمون فیزیک"
+                placeholder={t("exam.name.placeholder")}
                 autoFocus
               />
+
+              <label>{t("exam.type.label")}</label>
+              <div className="exam-type-toggle">
+                <button
+                  type="button"
+                  className={`exam-type-btn ${examType === "practice" ? "active" : ""}`}
+                  onClick={() => setExamType("practice")}
+                >
+                  <Icon name="bookOpen" size={15} /> {t("exam.type.practice")}
+                </button>
+                <button
+                  type="button"
+                  className={`exam-type-btn ${examType === "exam" ? "active" : ""}`}
+                  onClick={() => setExamType("exam")}
+                >
+                  <Icon name="fileText" size={15} /> {t("exam.type.exam")}
+                </button>
+              </div>
+
+              {examType === "exam" && (
+                <>
+                  <label>{t("exam.timer.label")}</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="300"
+                    value={timerDuration}
+                    onChange={(event) => setTimerDuration(event.target.value)}
+                    placeholder={t("exam.timer.default")}
+                  />
+                </>
+              )}
+
+              {examType === "practice" && (
+                <>
+                  <label>{t("exam.stopwatch.label")}</label>
+                  <p className="answer-key-hint">{t("exam.stopwatch.hint")}</p>
+                  <div className="exam-type-toggle" role="group" aria-label={t("exam.stopwatch.label")}>
+                    <button
+                      type="button"
+                      className={`exam-type-btn ${stopwatchEnabled ? "active" : ""}`}
+                      onClick={() => setStopwatchEnabled(true)}
+                      aria-pressed={stopwatchEnabled}
+                    >
+                      <Icon name="timer" size={15} /> {t("exam.stopwatch.on")}
+                    </button>
+                    <button
+                      type="button"
+                      className={`exam-type-btn ${!stopwatchEnabled ? "active" : ""}`}
+                      onClick={() => setStopwatchEnabled(false)}
+                      aria-pressed={!stopwatchEnabled}
+                    >
+                      <Icon name="close" size={15} /> {t("exam.stopwatch.off")}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {examType === "exam" && (
+                <div className="answer-key-editor">
+                  <label>{t("exam.answerKey.label")}</label>
+                  <p className="answer-key-hint">{t("exam.answerKey.hint")}</p>
+
+                  <div className="answer-key-bulk">
+                    <button type="button" className="secondary-button" onClick={() => {
+                      const newKey = {};
+                      effectiveNumbers.forEach((num) => {
+                        newKey[num] = "1";
+                      });
+                      setAnswerKeyData(newKey);
+                    }}>
+                      {t("exam.answerKey.setAll")}
+                    </button>
+                    <button type="button" className="secondary-button" onClick={() => setAnswerKeyData({})}>
+                      {t("exam.answerKey.clear")}
+                    </button>
+                  </div>
+
+                  <div className="answer-key-count">
+                    {Object.keys(answerKeyData).length > 0
+                      ? `${Object.keys(answerKeyData).length} ${t("exam.answerKey.set")}`
+                      : t("exam.answerKey.none")
+                    }
+                  </div>
+
+                  <AnswerKeyGrid
+                    questionCount={effectiveNumbers.length}
+                    customNumbering={customNumbering}
+                    startNumber={startNumber}
+                    useStep={useStep}
+                    step={step}
+                    answerKeyData={answerKeyData}
+                    setAnswerKeyData={setAnswerKeyData}
+                  />
+                </div>
+              )}
 
               {!customNumbering && (
                 <>
                   <label>
-                    تعداد تست
+                    {t("exam.questionCount.label")}
                   </label>
 
                   <input
@@ -740,7 +994,7 @@ function Folder() {
                           .value
                       )
                     }
-                    placeholder="مثلاً 50"
+                    placeholder={t("exam.questionCount.placeholder")}
                   />
                 </>
               )}
@@ -763,7 +1017,7 @@ function Folder() {
                 />
 
                 <span>
-                  شماره‌گذاری سفارشی
+                  {t("exam.customNumbering")}
                 </span>
 
               </label>
@@ -777,7 +1031,7 @@ function Folder() {
                     <div>
 
                       <label>
-                        شروع
+                        {t("exam.numbering.start")}
                       </label>
 
                       <input
@@ -800,7 +1054,7 @@ function Folder() {
                     <div>
 
                       <label>
-                        پایان
+                        {t("exam.numbering.end")}
                       </label>
 
                       <input
@@ -840,7 +1094,7 @@ function Folder() {
                     />
 
                     <span>
-                      ضریب شماره‌گذاری
+                      {t("exam.numbering.step")}
                     </span>
 
                   </label>
@@ -860,7 +1114,7 @@ function Folder() {
                             .value
                         )
                       }
-                      placeholder="مثلاً 2"
+                      placeholder={t("exam.numbering.stepPlaceholder")}
                     />
                   )}
 
@@ -921,7 +1175,7 @@ function Folder() {
                         return (
                           <>
                             <span>
-                              پیش‌نمایش
+                              {t("exam.numbering.preview")}
                             </span>
 
                             <strong>
@@ -947,11 +1201,11 @@ function Folder() {
                 <div className="exam-setting-info">
 
                   <strong>
-                    نمره منفی
+                    {t("exam.negativeMarking")}
                   </strong>
 
                   <span>
-                    هر ۳ پاسخ غلط، یک پاسخ درست را خنثی می‌کند.
+                    {t("exam.negativeMarking.description")}
                   </span>
 
                 </div>
@@ -992,7 +1246,7 @@ function Folder() {
                   closeModal
                 }
               >
-                لغو
+                {t("exam.cancel")}
               </button>
 
               <button
@@ -1003,17 +1257,13 @@ function Folder() {
                 }
               >
                 {editingExam
-                  ? "ذخیره تغییرات"
-                  : "ساخت آزمون"}
+                  ? t("exam.save")
+                  : t("exam.create.submit")}
               </button>
 
             </div>
 
-          </div>
-
-        </div>
-
-      )}
+      </Modal>
 
     </section>
   );

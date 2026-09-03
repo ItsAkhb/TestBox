@@ -1,0 +1,325 @@
+/* =========================================================
+   REDESIGN LAYER — Remaining pages (Phase 8)
+   Marked, Settings, Account. Auth pages were already clean.
+   Also fixes hardcoded RTL direction on settings surfaces.
+   ========================================================= */
+
+/* ---------- Marked ---------- */
+
+.marked-group-info h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.marked-group-info h3 > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marked-group-info h3 svg,
+.marked-folder svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.marked-question-star {
+  display: inline-flex;
+  color: var(--warning);
+}
+
+.marked-question-arrow {
+  display: inline-flex;
+}
+
+/* ---------- Settings section headers ---------- */
+
+.settings-section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.settings-section-icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: var(--radius-md);
+
+  background: var(--surface-soft);
+  color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--divider);
+}
+
+.settings-section-icon.is-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+  box-shadow: inset 0 0 0 1px var(--danger-border);
+}
+
+.settings-section-header > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-danger-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-danger-info > div {
+  min-width: 0;
+}
+
+.settings-action-icon {
+  color: var(--primary);
+}
+
+/* ---------- Weather search ---------- */
+
+.wx-current {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.wx-search {
+  margin-top: 14px;
+  max-width: 420px;
+  position: relative;
+}
+
+.wx-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.wx-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.wx-results {
+  position: absolute;
+  top: 100%;
+  inset-inline: 0;
+
+  margin-top: 4px;
+
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+
+  z-index: var(--z-dropdown);
+
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.wx-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  width: 100%;
+  padding: 10px 12px;
+
+  border: 0;
+  border-bottom: 1px solid var(--border);
+
+  background: transparent;
+  color: var(--text);
+
+  cursor: pointer;
+  font-size: 13px;
+  text-align: start;
+  font-family: inherit;
+}
+
+.wx-result:last-child {
+  border-bottom: 0;
+}
+
+.wx-result:hover {
+  background: var(--surface-soft);
+}
+
+.wx-result svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.wx-result-sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin-inline-start: auto;
+  text-align: end;
+}
+
+/* ---------- Account ---------- */
+
+.account-card {
+  max-width: 650px;
+}
+
+.account-email {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.account-email svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* ---------- Error boundary ---------- */
+
+.error-boundary-icon {
+  display: grid;
+  place-items: center;
+  color: var(--warning);
+}
+
+/* ---------- Empty-state spot illustrations ---------- */
+
+.empty-art {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.empty-art .art-stroke {
+  stroke: var(--primary);
+}
+
+.empty-art .art-paper {
+  fill: var(--surface);
+  stroke: var(--border-hover);
+}
+
+.empty-art .art-fill {
+  fill: var(--primary);
+}
+
+.empty-art .art-fill-warm {
+  fill: var(--warm);
+}
+
+.empty-art .art-fill-soft {
+  fill: var(--primary-border);
+  opacity: 0.7;
+}
+
+/* ---------- Auth art panel (desktop) ---------- */
+
+.auth-art {
+  display: none;
+}
+
+@media (min-width: 960px) {
+  .auth-page {
+    gap: 0;
+    /* Two coordinated zones share one height */
+    align-items: stretch;
+  }
+
+  .auth-card {
+    flex: 1 1 auto;
+    max-width: 480px;
+    padding: 28px;
+    /* Dock flush against the art panel (logical sides = RTL-safe) */
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+  }
+
+  .auth-art {
+    position: relative;
+    overflow: hidden;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+
+    width: 320px;
+    flex-shrink: 0;
+
+    padding: 32px 28px;
+
+    background:
+      radial-gradient(circle at 18% 22%, rgb(255 255 255 / 9%) 0 5px, transparent 6px),
+      radial-gradient(circle at 82% 14%, rgb(255 255 255 / 7%) 0 4px, transparent 5px),
+      radial-gradient(circle at 70% 78%, rgb(255 255 255 / 8%) 0 6px, transparent 7px),
+      radial-gradient(circle at 30% 84%, rgb(255 255 255 / 6%) 0 4px, transparent 5px),
+      radial-gradient(circle at 88% 52%, rgb(255 255 255 / 5%) 0 3px, transparent 4px),
+      linear-gradient(150deg, #251C13 0%, #171310 70%);
+    border: 1px solid #171310;
+    border-inline-end: 0;
+    border-radius: var(--radius-xl);
+    /* Square on the docked (inline-end) side, rounded outside */
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+
+    color: #F7F3EC;
+  }
+
+  .auth-art-brand {
+    font-size: var(--text-2xl);
+    font-weight: 800;
+    letter-spacing: var(--tracking-tight);
+  }
+
+  .auth-art-tag {
+    margin: 0;
+    max-width: 220px;
+
+    text-align: center;
+
+    color: rgb(247 243 236 / 68%);
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
+  }
+}
+
+/* ---------- Remaining responsive ---------- */
+
+@media (max-width: 600px) {
+  .settings-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-danger {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .account-actions .primary-button,
+  .account-actions .secondary-button,
+  .account-actions .danger-button {
+    flex: 1 1 100%;
+  }
+}

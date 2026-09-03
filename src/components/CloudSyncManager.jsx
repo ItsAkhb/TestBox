@@ -9,6 +9,9 @@ import { useAuth } from "../context/AuthContext";
 import {
   getFolders,
   getExams,
+  getDirtyState,
+  clearDirtySection,
+  hasPendingLocalChanges,
   setStorageUser,
 } from "../services/dataService";
 
@@ -21,15 +24,22 @@ import { supabase } from "../services/supabaseClient";
 
 import { useSync } from "../context/SyncContext";
 
+// Exponential backoff for failed sync attempts while online.
+// 5s → 10s → 20s → 40s → 80s → 160s → 300s (cap).
+const BACKOFF_BASE_MS = 5000;
+const BACKOFF_CAP_MS = 5 * 60 * 1000;
+
+function computeBackoffMs(attempt) {
+  return Math.min(BACKOFF_BASE_MS * 2 ** attempt, BACKOFF_CAP_MS);
+}
 
 function CloudSyncManager() {
 
-  const { user } = useAuth();
+  const { user, isOffline } = useAuth();
 
   const {
     setSyncStatus,
   } = useSync();
-
 
   const syncingRef =
     useRef(false);
@@ -37,6 +47,18 @@ function CloudSyncManager() {
   const pendingSyncRef =
     useRef(false);
 
+  const backoffAttemptRef =
+    useRef(0);
+
+  const backoffTimerRef =
+    useRef(null);
+
+  const offlineRef =
+    useRef(false);
+
+  useEffect(() => {
+    offlineRef.current = isOffline;
+  }, [isOffline]);
 
 
 
@@ -63,8 +85,26 @@ function CloudSyncManager() {
     setSyncStatus,
   ]);
 
+  const syncLocalChangesRef = useRef(null);
 
+  const clearBackoff = useCallback(() => {
+    if (backoffTimerRef.current) {
+      clearTimeout(backoffTimerRef.current);
+      backoffTimerRef.current = null;
+    }
+  }, []);
 
+  const scheduleRetry = useCallback(() => {
+    clearBackoff();
+    const delay = computeBackoffMs(backoffAttemptRef.current);
+    backoffAttemptRef.current = Math.min(backoffAttemptRef.current + 1, 20);
+    backoffTimerRef.current = setTimeout(() => {
+      backoffTimerRef.current = null;
+      if (!offlineRef.current && pendingSyncRef.current) {
+        syncLocalChangesRef.current?.();
+      }
+    }, delay);
+  }, [clearBackoff]);
 
 
 
@@ -75,6 +115,15 @@ function CloudSyncManager() {
         return;
       }
 
+      if (offlineRef.current) {
+        pendingSyncRef.current = true;
+        // Local edits made while offline must flip the dot to
+        // "pending" (offline + unsynced changes), not stay "offline".
+        setSyncStatus(
+          hasPendingLocalChanges() ? "pending" : "offline"
+        );
+        return;
+      }
 
       pendingSyncRef.current = true;
 
@@ -87,45 +136,17 @@ function CloudSyncManager() {
       syncingRef.current = true;
 
 
-
       try {
-
 
         while (
           pendingSyncRef.current
         ) {
 
-
           pendingSyncRef.current = false;
 
-
-
-          const folders =
-            getFolders();
-
-
-          const exams =
-            getExams();
-
-
-
-          const hasLocalData =
-            folders.length > 0 ||
-            exams.length > 0;
-
-
-
-          if (!hasLocalData) {
-
-            setSyncStatus(
-              "synced"
-            );
-
-            continue;
-
+          if (offlineRef.current) {
+            break;
           }
-
-
 
 
           setSyncStatus(
@@ -136,29 +157,54 @@ function CloudSyncManager() {
 
           try {
 
+            // UPLOAD FIRST: local changes go to cloud before any
+            // download so offline edits can never be overwritten.
+            const dirty = getDirtyState();
 
-            console.log(
-              "LOCAL → CLOUD START"
-            );
+            await syncLocalToCloud(user.id, { dirty });
+
+            if (dirty.deletes.length > 0) {
+              clearDirtySection("deletes");
+            }
+            if (dirty.folders) {
+              clearDirtySection("folders");
+            }
+            if (dirty.exams) {
+              clearDirtySection("exams");
+            }
+            if (dirty.examData && Object.keys(dirty.examData).length > 0) {
+              clearDirtySection(
+                "examData",
+                Object.keys(dirty.examData)
+              );
+            }
+            if (dirty.subjects) {
+              clearDirtySection("subjects");
+            }
+            if (dirty.settings) {
+              clearDirtySection("settings");
+            }
+
+            // Activity days upload inside syncLocalToCloud; clear the
+            // same snapshot of days we just pushed.
+            if (dirty.activity && Object.keys(dirty.activity).length > 0) {
+              clearDirtySection(
+                "activity",
+                Object.keys(dirty.activity)
+              );
+            }
 
 
-
-            await syncLocalToCloud(
-              user.id
-            );
-
+            // DOWNLOAD/RECONCILE: after a clean upload, pull cloud
+            // additions/updates. Dirty entities are skipped inside.
+            await syncCloudToLocal(user.id);
 
 
-            console.log(
-              "LOCAL → CLOUD FINISHED"
-            );
-
-
+            backoffAttemptRef.current = 0;
 
             setSyncStatus(
-              "synced"
+              hasPendingLocalChanges() ? "pending" : "synced"
             );
-
 
 
           } catch(error) {
@@ -175,12 +221,13 @@ function CloudSyncManager() {
             );
 
 
+            scheduleRetry();
+
+            break;
+
           }
 
-
         }
-
-
 
       } finally {
 
@@ -195,13 +242,12 @@ function CloudSyncManager() {
     }, [
       user,
       setSyncStatus,
+      scheduleRetry,
     ]);
 
-
-
-
-
-
+  useEffect(() => {
+    syncLocalChangesRef.current = syncLocalChanges;
+  }, [syncLocalChanges]);
 
 
 
@@ -212,8 +258,9 @@ function CloudSyncManager() {
 
 
       pendingSyncRef.current = false;
-
       syncingRef.current = false;
+      clearBackoff();
+      backoffAttemptRef.current = 0;
 
 
       return;
@@ -222,9 +269,7 @@ function CloudSyncManager() {
     }
 
 
-
     let cancelled = false;
-
 
 
 
@@ -233,15 +278,24 @@ function CloudSyncManager() {
     async function initializeSync() {
 
 
+      // Initial sync only runs when actually online. While offline,
+      // the local data is already on screen; pending changes upload
+      // when connectivity returns.
+      if (offlineRef.current) {
+        pendingSyncRef.current = true;
+        setSyncStatus(
+          hasPendingLocalChanges() ? "pending" : "offline"
+        );
+        return;
+      }
+
 
       if (syncingRef.current) {
         return;
       }
 
 
-
       syncingRef.current = true;
-
 
 
       try {
@@ -250,7 +304,6 @@ function CloudSyncManager() {
         setSyncStatus(
           "syncing"
         );
-
 
 
 
@@ -278,8 +331,6 @@ function CloudSyncManager() {
         if (folderError) {
           throw folderError;
         }
-
-
 
 
 
@@ -319,77 +370,53 @@ function CloudSyncManager() {
 
 
 
+        const dirty = getDirtyState();
 
         const localHasData =
           getFolders().length > 0 ||
           getExams().length > 0;
 
-
-
         const cloudHasData =
           (cloudFolderCount || 0) > 0 ||
           (cloudExamCount || 0) > 0;
 
+        // UPLOAD FIRST whenever there are local (dirty) changes — even
+        // when the cloud has data. Pull only touches clean entities.
+        if (localHasData || hasPendingLocalChanges()) {
 
+          await syncLocalToCloud(user.id, { dirty });
 
+          if (dirty.deletes.length > 0) clearDirtySection("deletes");
+          if (dirty.folders) clearDirtySection("folders");
+          if (dirty.exams) clearDirtySection("exams");
+          if (dirty.examData) {
+            clearDirtySection("examData", Object.keys(dirty.examData));
+          }
+          if (dirty.subjects) clearDirtySection("subjects");
+          if (dirty.settings) clearDirtySection("settings");
+          if (dirty.activity) {
+            clearDirtySection("activity", Object.keys(dirty.activity));
+          }
+
+        }
 
 
         if (cloudHasData) {
 
-
-
-          console.log(
-            "CLOUD → LOCAL START"
-          );
-
-
-
-          await syncCloudToLocal(
-            user.id
-          );
-
-
-
-          console.log(
-            "CLOUD → LOCAL FINISHED"
-          );
-
-
-
-
-        } else if (localHasData) {
-
-
-
-          console.log(
-            "LOCAL → CLOUD INITIAL START"
-          );
-
-
-
-          await syncLocalToCloud(
-            user.id
-          );
-
-
-
-          console.log(
-            "LOCAL → CLOUD INITIAL FINISHED"
-          );
-
-
-
-
-        } else {
-
-
-          console.log(
-            "NOTHING TO SYNC"
-          );
-
+          await syncCloudToLocal(user.id);
 
         }
 
+
+
+        backoffAttemptRef.current = 0;
+
+
+        if (!cancelled) {
+          setSyncStatus(
+            hasPendingLocalChanges() ? "pending" : "synced"
+          );
+        }
 
 
 
@@ -404,32 +431,26 @@ function CloudSyncManager() {
 
 
 
-        setSyncStatus(
-          "error"
-        );
+        if (!cancelled) {
 
+          setSyncStatus(
+            "error"
+          );
 
+        }
+
+        scheduleRetry();
 
         return;
-
 
 
       } finally {
 
 
-
         syncingRef.current = false;
 
 
-
-        setSyncStatus(
-          "synced"
-        );
-
-
-
       }
-
 
 
 
@@ -453,9 +474,6 @@ function CloudSyncManager() {
 
 
 
-
-
-
     function handleLocalChange() {
 
 
@@ -468,11 +486,11 @@ function CloudSyncManager() {
 
 
 
-
     window.addEventListener(
       "testbox-local-change",
       handleLocalChange
     );
+
 
 
 
@@ -489,7 +507,6 @@ function CloudSyncManager() {
       cancelled = true;
 
 
-
       window.removeEventListener(
         "testbox-local-change",
         handleLocalChange
@@ -504,9 +521,34 @@ function CloudSyncManager() {
     user,
     syncLocalChanges,
     setSyncStatus,
+    clearBackoff,
+    scheduleRetry,
+    isOffline,
   ]);
 
 
+
+  // When connectivity returns, immediately flush pending changes.
+  useEffect(() => {
+    if (isOffline || !user) {
+      if (isOffline && user) {
+        setSyncStatus(
+          hasPendingLocalChanges() ? "pending" : "offline"
+        );
+      }
+      return;
+    }
+
+    backoffAttemptRef.current = 0;
+
+    if (pendingSyncRef.current || hasPendingLocalChanges()) {
+      syncLocalChanges();
+    } else {
+      setSyncStatus("synced");
+    }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOffline, user]);
 
 
 

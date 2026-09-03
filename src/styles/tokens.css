@@ -1,0 +1,291 @@
+/* =========================================================
+   TestBox Design System — "Ruled paper & ink"
+   Modern + Cozy + Premium + Distinctive. An answer sheet
+   come alive: warm paper, deep ink, a petrol-teal signature
+   with burnt-orange warmth. Answer-bubble motif throughout.
+   ========================================================= */
+
+:root {
+  /* ---------- Surfaces — warm paper ladder ---------- */
+
+  --background: #F7F3EC;
+  --background-alt: #EFE9DD;
+  --surface: #FFFDF9;
+  --surface-soft: #F7F2E7;
+  --surface-raised: #FFFDF9;
+  --surface-overlay: #FFFDF9;
+  --card: #FFFDF9;
+
+  /* ---------- Text — deep ink ---------- */
+
+  --text: #1C1512;
+  --text-secondary: #57504A;
+  --muted: #8F867B;
+
+  /* ---------- Borders — warm stone ---------- */
+
+  --border: #E5DDCF;
+  --border-hover: #D3C8B4;
+  --divider: #EEE7D8;
+
+  /* ---------- Accent — Petrol teal (signature) ---------- */
+
+  --primary: #0E7490;
+  --primary-hover: #155E75;
+  --primary-soft: #E2F4F8;
+  --primary-border: #9ADCEB;
+  --primary-ghost: rgba(14, 116, 144, 0.07);
+
+  /* ---------- Warm accent — Burnt orange ---------- */
+
+  --warm: #EA580C;
+  --warm-hover: #C2410C;
+  --warm-soft: #FFF3E8;
+  --warm-border: #FDBA74;
+
+  /* ---------- Semantic ---------- */
+
+  --success: #16A34A;
+  --success-soft: #F0FDF4;
+  --success-border: #BBF7D0;
+
+  --warning: #D97706;
+  --warning-soft: #FFFBEB;
+  --warning-border: #FDE68A;
+
+  --danger: #DC2626;
+  --danger-soft: #FEF2F2;
+  --danger-border: #FECACA;
+
+  --info: #2563EB;
+  --info-soft: #EFF6FF;
+  --info-border: #BFDBFE;
+
+  /* ---------- Study / progress ---------- */
+
+  --study: #EA580C;
+  --study-soft: #FFF3E8;
+
+  --timer-normal: var(--text);
+  --timer-warning: #D97706;
+  --timer-critical: #DC2626;
+
+  /* ---------- Legacy aliases — kept in sync with the scale above ---------- */
+
+  --primary-soft: #E2F4F8;
+
+  /* ---------- Typography ---------- */
+
+  --font-fa: "Vazirmatn", "Segoe UI", Tahoma, sans-serif;
+  --font-en: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.625rem;
+  --text-3xl: 2rem;
+  --text-4xl: 2.5rem;
+  --text-5xl: 3.5rem;
+
+  --leading-none: 1;
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55;
+  --leading-relaxed: 1.75;
+
+  --tracking-tight: -0.025em;
+  --tracking-snug: -0.015em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.02em;
+  --tracking-wider: 0.06em;
+
+  /* ---------- Radius — soft, organic geometry ---------- */
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 999px;
+
+  /* ---------- Elevation — layered, warm-neutral shadows ---------- */
+
+  --shadow-2xs: 0 1px 2px rgb(30 27 24 / 3%);
+
+  --shadow-xs: 0 1px 3px rgb(30 27 24 / 4%), 0 1px 2px rgb(30 27 24 / 3%);
+
+  --shadow-sm:
+    0 1px 3px rgb(30 27 24 / 4%),
+    0 4px 12px rgb(30 27 24 / 4%);
+
+  --shadow-md:
+    0 4px 6px rgb(30 27 24 / 4%),
+    0 10px 24px rgb(30 27 24 / 6%);
+
+  --shadow-lg:
+    0 8px 16px rgb(30 27 24 / 5%),
+    0 20px 40px rgb(30 27 24 / 8%);
+
+  --shadow-xl:
+    0 12px 24px rgb(30 27 24 / 6%),
+    0 32px 56px rgb(30 27 24 / 10%);
+
+  /* ---------- Motion ---------- */
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --duration-slower: 450ms;
+
+  --transition: var(--duration-normal) var(--ease-in-out);
+  --transition-fast: var(--duration-fast) var(--ease-in-out);
+  --transition-slow: var(--duration-slow) var(--ease-in-out);
+
+  /* ---------- Spacing scale (4px base) ---------- */
+
+  --space-0: 0px;
+  --space-px: 1px;
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-2-5: 10px;
+  --space-3: 12px;
+  --space-3-5: 14px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-9: 36px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-14: 56px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* ---------- Layout ---------- */
+
+  --sidebar-width: 256px;
+  --sidebar-collapsed: 72px;
+  --content-max: 1200px;
+  --page-padding: 32px;
+  --topbar-height: 60px;
+  --mobile-nav-height: 68px;
+
+  /* ---------- Z-index scale ---------- */
+
+  --z-base: 1;
+  --z-dropdown: 50;
+  --z-sticky: 100;
+  --z-overlay: 500;
+  --z-modal: 1000;
+  --z-toast: 1100;
+  --z-tooltip: 1200;
+}
+
+
+/* =========================================================
+   Dark Theme — warm charcoal, not pure black
+   ========================================================= */
+
+:root[data-theme="dark"] {
+  --background: #121110;
+  --background-alt: #1B1A18;
+  --surface: #23211E;
+  --surface-soft: #171614;
+  --surface-raised: #2E2B27;
+  --surface-overlay: #2E2B27;
+  --card: #23211E;
+
+  --text: #F5F3EE;
+  --text-secondary: #A8A29A;
+  --muted: #847D75;
+
+  --border: #38332E;
+  --border-hover: #4A443B;
+  --divider: #2E2A26;
+
+  --primary: #0D9488;
+  --primary-hover: #14B8A6;
+  --primary-soft: #062E2B;
+  --primary-border: #0F766E;
+  --primary-ghost: rgba(20, 184, 166, 0.1);
+
+  --warm: #F59E0B;
+  --warm-hover: #FBBF24;
+  --warm-soft: #1E1507;
+  --warm-border: #92400E;
+
+  --success: #4ADE80;
+  --success-soft: #052E16;
+  --success-border: #166534;
+
+  --warning: #FBBF24;
+  --warning-soft: #1C1708;
+  --warning-border: #78350F;
+
+  --danger: #F87171;
+  --danger-soft: #1C0A0A;
+  --danger-border: #7F1D1D;
+
+  --info: #60A5FA;
+  --info-soft: #0C1A33;
+  --info-border: #1E3A5F;
+
+  --study: #F59E0B;
+  --study-soft: #1E1507;
+
+  --timer-normal: var(--text);
+  --timer-warning: #FBBF24;
+  --timer-critical: #F87171;
+
+  --shadow-2xs: 0 1px 2px rgb(0 0 0 / 30%);
+
+  --shadow-xs:
+    0 1px 3px rgb(0 0 0 / 30%),
+    0 1px 2px rgb(0 0 0 / 25%);
+
+  --shadow-sm:
+    0 1px 3px rgb(0 0 0 / 30%),
+    0 4px 12px rgb(0 0 0 / 25%);
+
+  --shadow-md:
+    0 4px 6px rgb(0 0 0 / 28%),
+    0 10px 24px rgb(0 0 0 / 35%);
+
+  --shadow-lg:
+    0 8px 16px rgb(0 0 0 / 30%),
+    0 20px 40px rgb(0 0 0 / 40%);
+
+  --shadow-xl:
+    0 12px 24px rgb(0 0 0 / 35%),
+    0 32px 56px rgb(0 0 0 / 50%);
+}
+
+
+/* =========================================================
+   Reduced Motion
+   ========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

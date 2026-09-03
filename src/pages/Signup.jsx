@@ -5,11 +5,13 @@ import {
 } from "react-router-dom";
 
 import { supabase } from "../services/supabaseClient";
+import { useTranslation } from "../i18n";
+import LogoMark from "../components/ui/LogoMark";
 
 
 
 function Signup() {
-
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
 
@@ -47,7 +49,7 @@ function Signup() {
 
 
       setError(
-        "رمز عبور باید حداقل ۶ کاراکتر باشد."
+        t("auth.signup.passwordMin")
       );
 
 
@@ -99,11 +101,8 @@ function Signup() {
 
 
       setError(
-
         signupError.message ||
-
-        "ساخت حساب انجام نشد."
-
+        t("auth.signup.failed")
       );
 
 
@@ -136,9 +135,7 @@ function Signup() {
 
 
     setMessage(
-
-      "حساب ساخته شد. اگر تأیید ایمیل فعال است، ایمیل خود را بررسی کنید."
-
+      t("auth.signup.success")
     );
 
 
@@ -160,6 +157,11 @@ function Signup() {
 
 
 
+      <aside className="auth-art" aria-hidden="true">
+        <LogoMark size={72} />
+        <span className="auth-art-brand">TestBox</span>
+      </aside>
+
       <div className="auth-card">
 
 
@@ -175,9 +177,7 @@ function Signup() {
 
 
           <h1>
-
-            ساخت حساب
-
+            {t("auth.signup.title")}
           </h1>
 
 
@@ -188,9 +188,7 @@ function Signup() {
 
 
           <p>
-
-            برای ذخیره و همگام‌سازی اطلاعاتت حساب بساز.
-
+            {t("auth.signup.subtitle")}
           </p>
 
 
@@ -224,9 +222,7 @@ function Signup() {
 
 
           <label>
-
-            ایمیل
-
+            {t("auth.email")}
           </label>
 
 
@@ -270,9 +266,7 @@ function Signup() {
 
 
           <label>
-
-            رمز عبور
-
+            {t("auth.password")}
           </label>
 
 
@@ -410,10 +404,8 @@ function Signup() {
 
 
               {loading
-
-                ? "در حال ساخت..."
-
-                : "ساخت حساب"}
+                ? t("auth.signup.loading")
+                : t("auth.signup.submit")}
 
 
 

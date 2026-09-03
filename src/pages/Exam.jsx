@@ -1,20 +1,39 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
+  useCallback,
 } from "react";
 
 import {
   Link,
   useLocation,
   useParams,
+  useNavigate,
 } from "react-router-dom";
 
 import {
   getExams,
   getExamData,
+  getExamDataKey,
+  getFolders,
   saveExamData,
 } from "../services/dataService";
+import {
+  recordQuestionAnswered,
+  recordExamCompleted,
+  recordStudyTime,
+} from "../services/activityTracker";
+import { getQuestionNumbers } from "../services/scoring";
+import { useTranslation } from "../i18n";
+import useTimer from "../hooks/useTimer";
+import useStopwatch from "../hooks/useStopwatch";
+import ExamTimer from "../components/exam/ExamTimer";
+import QuestionNavigator from "../components/exam/QuestionNavigator";
+import Modal from "../components/ui/Modal";
+import Icon from "../components/ui/Icon";
+import { motion } from "framer-motion";
 
 const choices = [
   "1",
@@ -112,6 +131,8 @@ function Exam() {
 function ExamContent({ id }) {
   const location =
     useLocation();
+  const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const [exam] =
     useState(() =>
@@ -123,10 +144,85 @@ function ExamContent({ id }) {
       getExamData(id)
     );
 
+  // Mirror of examData that updates synchronously — saveData merges onto
+  // this so consecutive rapid saves never operate on a stale snapshot.
+  const latestExamDataRef =
+    useRef(examData);
+
+  useEffect(() => {
+    latestExamDataRef.current =
+      examData;
+  }, [examData]);
+
+  // Load answer key for exam mode
+  const [answerKeyData] = useState(() => {
+    if (!exam || exam.type !== "exam") return {};
+    try {
+      const data = JSON.parse(localStorage.getItem(getExamDataKey(id)) || "{}");
+      return data.answerKey || {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Check if this is exam mode
+  const isExamMode = exam?.type === "exam";
+
+  // Resolve subject metadata once per exam via the folder registry
+  const examMeta = useMemo(() => {
+    if (!exam) return null;
+    const folder = getFolders().find(
+      (f) => String(f.id) === String(exam.folderId)
+    );
+    return {
+      examId: exam.id,
+      examName: exam.name,
+      folderId: exam.folderId ?? null,
+      subjectId: folder?.subjectId ?? null,
+    };
+  }, [exam]);
+
+  // Review mode: completed exams are viewable read-only via ?review=1
+  const isReviewMode =
+    isExamMode &&
+    examData?.examState?.status === "completed" &&
+    new URLSearchParams(location.search).get("review") === "1";
+
+  // Exam-mode atmosphere: lets CSS theme the workspace per mode
+  // (ink focus slab in active exams). Always cleaned up on unmount.
+  useEffect(() => {
+    const mode = isReviewMode ? "review" : isExamMode ? "exam" : "practice";
+    document.body.dataset.examMode = mode;
+    return () => {
+      delete document.body.dataset.examMode;
+    };
+  }, [isExamMode, isReviewMode]);
+
+  // Lifecycle redirect (deferred to useEffect so it never violates hook order —
+  // the component previously had early returns before later hooks, which
+  // crashed React's reconciler on the finish transition).
+  useEffect(() => {
+    if (!exam || !isExamMode || isReviewMode) return;
+    const examStatus = examData?.examState?.status;
+    if (examStatus === "completed") {
+      navigate(`/exam/${id}/results`, { replace: true });
+    } else if (examStatus !== "in_progress") {
+      navigate(`/exam/${id}/start`, { replace: true });
+    }
+  }, [exam, isExamMode, isReviewMode, examData, id, navigate]);
+
   const [
     currentPage,
     setCurrentPage,
   ] = useState(1);
+
+  const [showNavigator, setShowNavigator] = useState(false);
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+
+  // Question currently holding keyboard focus — target for 1–4 / M shortcuts.
+  const activeQuestionRef = useRef(null);
+  // Guards the finish flow against double-fire (manual confirm + timer expiry).
+  const finishingRef = useRef(false);
 
   const {
     answers,
@@ -383,22 +479,32 @@ function ExamContent({ id }) {
     note:
       newNote = note,
   } = {}) {
+    // Merge onto the LATEST data (kept in a ref that updates synchronously)
+    // so rapid consecutive clicks can't overwrite each other with stale
+    // closures. answerKey and examState are preserved because they live in
+    // the same record but are managed by their own flows.
+    const base = latestExamDataRef.current || examData;
+
     const newData = {
+      ...base,
+
       answers:
-        newAnswers,
+        newAnswers === answers ? base.answers : newAnswers,
 
       correctAnswers:
-        newCorrectAnswers,
+        newCorrectAnswers === correctAnswers ? base.correctAnswers : newCorrectAnswers,
 
       marked:
-        newMarked,
+        newMarked === marked ? base.marked : newMarked,
 
       results:
-        newResults,
+        newResults === results ? base.results : newResults,
 
       note:
-        newNote,
+        newNote === note ? base.note : newNote,
     };
+
+    latestExamDataRef.current = newData;
 
     const saved =
       saveExamData(
@@ -421,26 +527,143 @@ function ExamContent({ id }) {
     return true;
   }
 
+  const handleFinishExam = useCallback(() => {
+    if (!exam || !isExamMode) return;
+    // The timer and the manual confirm button can race (expiry while the
+    // dialog is open). Finish exactly once per mount.
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+
+    // Read the LATEST data from the ref — the timer can fire this from an
+    // interval, and closure state can be stale relative to recent clicks.
+    const current = latestExamDataRef.current || examData;
+    const currentAnswers = current.answers;
+
+    // Auto-score based on answer key
+    let finalStats = null;
+    if (Object.keys(answerKeyData).length > 0) {
+      const updatedResults = { ...current.results };
+      const updatedCorrectAnswers = { ...current.correctAnswers };
+
+      // Authoritative question list from the exam object — NEVER from the key
+      const allQuestionNumbers = getQuestionNumbers(exam);
+
+      let correct = 0;
+      let wrong = 0;
+      let unanswered = 0;
+      let ungraded = 0;
+
+      // Score each question; keyless questions stay ungraded
+      allQuestionNumbers.forEach((questionNumber) => {
+        const userAnswer = currentAnswers[questionNumber];
+        const correctAnswer = answerKeyData[questionNumber];
+
+        if (correctAnswer == null || correctAnswer === "") {
+          ungraded += 1;
+          updatedResults[questionNumber] = "ungraded";
+          return;
+        }
+
+        if (!userAnswer) {
+          unanswered += 1;
+        } else if (String(userAnswer) === String(correctAnswer)) {
+          updatedResults[questionNumber] = "correct";
+          updatedCorrectAnswers[questionNumber] = userAnswer;
+          correct += 1;
+        } else {
+          updatedResults[questionNumber] = "wrong";
+          updatedCorrectAnswers[questionNumber] = correctAnswer;
+          wrong += 1;
+        }
+      });
+
+      saveData({
+        results: updatedResults,
+        correctAnswers: updatedCorrectAnswers,
+      });
+
+      finalStats = {
+        correct,
+        wrong,
+        unanswered,
+        ungraded,
+        graded: correct + wrong + unanswered,
+        total: allQuestionNumbers.length,
+      };
+    }
+
+    // Update exam state to completed
+    try {
+      const key = getExamDataKey(id);
+      const data = JSON.parse(localStorage.getItem(key) || "{}");
+      data.examState = { ...data.examState, status: "completed", finishedAt: Date.now() };
+      localStorage.setItem(key, JSON.stringify(data));
+      latestExamDataRef.current = { ...latestExamDataRef.current, examState: data.examState };
+    } catch {
+      // non-fatal: results page still renders from navigation
+    }
+
+    // Record exam completion in daily activity (idempotent, replaces prior stats)
+    if (examMeta && finalStats) {
+      recordExamCompleted(examMeta, finalStats);
+    }
+
+    // Navigate to results
+    navigate(`/exam/${id}/results`);
+  }, [exam, isExamMode, id, navigate, answerKeyData, examMeta]);
+
+  // Timer for exam mode
+  const timerDurationSeconds = isExamMode ? (exam?.timerDuration || 60) * 60 : 0;
+  const timer = useTimer(
+    isExamMode ? id : null,
+    timerDurationSeconds,
+    handleFinishExam
+  );
+
+  // Practice session stopwatch (opt-in per exam via the creation form).
+  // Only genuinely-run deltas reach statistics: pause flushes its own
+  // delta, the hook flushes incremental deltas + the unmount remainder,
+  // and reset touches the engine only — never recorded history.
+  const stopwatchOn = !isExamMode && exam?.stopwatchEnabled === true;
+  const handleStopwatchTick = useCallback((deltaMs) => {
+    if (examMeta) recordStudyTime(examMeta, deltaMs);
+  }, [examMeta]);
+  const stopwatch = useStopwatch(stopwatchOn ? id : null, {
+    onTick: handleStopwatchTick,
+  });
+
+  function handleStopwatchPause() {
+    const flushed = stopwatch.pause();
+    if (flushed > 0 && examMeta) recordStudyTime(examMeta, flushed);
+  }
+
   function selectAnswer(
     questionNumber,
     answer
   ) {
+    // Read from the ref (always current) — not from the render closure —
+    // so fast consecutive interactions on different questions never race.
+    const current = latestExamDataRef.current || examData;
+    const currentAnswers = current.answers;
+    const currentResults = current.results;
+    const currentCorrectAnswers = current.correctAnswers;
+
     const currentAnswer =
-      answers[
+      currentAnswers[
         questionNumber
       ];
 
     const updatedAnswers = {
-      ...answers,
+      ...currentAnswers,
     };
 
     const updatedResults = {
-      ...results,
+      ...currentResults,
     };
 
     const updatedCorrectAnswers =
       {
-        ...correctAnswers,
+        ...currentCorrectAnswers,
       };
 
     // کلیک دوباره روی همان گزینه:
@@ -472,6 +695,11 @@ function ExamContent({ id }) {
           updatedCorrectAnswers,
       });
 
+      // Deselect: today's outcome reverts to unanswered (dedup handles tallies)
+      if (examMeta) {
+        recordQuestionAnswered(examMeta, questionNumber, "unanswered");
+      }
+
       return;
     }
 
@@ -499,14 +727,29 @@ function ExamContent({ id }) {
       correctAnswers:
         updatedCorrectAnswers,
     });
+
+    // Record the answer. Exam mode with a key knows the outcome immediately;
+    // practice starts as unanswered until the user marks it.
+    if (examMeta) {
+      const keyAnswer = isExamMode ? answerKeyData[questionNumber] : null;
+      const outcome =
+        keyAnswer != null
+          ? String(answer) === String(keyAnswer)
+            ? "correct"
+            : "wrong"
+          : "unanswered";
+      recordQuestionAnswered(examMeta, questionNumber, outcome);
+    }
   }
 
   function selectCorrectAnswer(
     questionNumber,
     answer
   ) {
+    const currentCorrect = (latestExamDataRef.current || examData).correctAnswers;
+
     const result =
-      results[
+      (latestExamDataRef.current || examData).results[
         questionNumber
       ];
 
@@ -520,11 +763,11 @@ function ExamContent({ id }) {
 
     const updatedCorrectAnswers =
       {
-        ...correctAnswers,
+        ...currentCorrect,
       };
 
     const currentCorrectAnswer =
-      correctAnswers[
+      currentCorrect[
         questionNumber
       ];
 
@@ -559,20 +802,22 @@ function ExamContent({ id }) {
   function toggleMark(
     questionNumber
   ) {
+    const currentMarked = (latestExamDataRef.current || examData).marked;
+
     const isMarked =
-      marked.includes(
+      currentMarked.includes(
         questionNumber
       );
 
     const updatedMarked =
       isMarked
-        ? marked.filter(
+        ? currentMarked.filter(
             (number) =>
               number !==
               questionNumber
           )
         : [
-            ...marked,
+            ...currentMarked,
             questionNumber,
           ];
 
@@ -586,8 +831,10 @@ function ExamContent({ id }) {
     questionNumber,
     result
   ) {
+    const current = latestExamDataRef.current || examData;
+
     const selectedAnswer =
-      answers[
+      current.answers[
         questionNumber
       ];
 
@@ -597,17 +844,17 @@ function ExamContent({ id }) {
     }
 
     const currentResult =
-      results[
+      current.results[
         questionNumber
       ];
 
     const updatedResults = {
-      ...results,
+      ...current.results,
     };
 
     const updatedCorrectAnswers =
       {
-        ...correctAnswers,
+        ...current.correctAnswers,
       };
 
     // کلیک دوباره روی همان وضعیت:
@@ -631,6 +878,11 @@ function ExamContent({ id }) {
         correctAnswers:
           updatedCorrectAnswers,
       });
+
+      // Unmarking: today's outcome reverts to unanswered
+      if (examMeta) {
+        recordQuestionAnswered(examMeta, questionNumber, "unanswered");
+      }
 
       return;
     }
@@ -661,6 +913,11 @@ function ExamContent({ id }) {
       correctAnswers:
         updatedCorrectAnswers,
     });
+
+    // Practice marking updates today's outcome (dedup prevents double counting)
+    if (examMeta) {
+      recordQuestionAnswered(examMeta, questionNumber, result);
+    }
   }
 
   function handleNoteChange(
@@ -683,6 +940,144 @@ function ExamContent({ id }) {
       });
   }
 
+  function scrollToQuestion(questionNumber) {
+    const element = document.getElementById(
+      `question-${questionNumber}`
+    );
+
+    if (!element) {
+      return;
+    }
+
+    element.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+
+    element.classList.add(
+      "question-focused"
+    );
+
+    setTimeout(() => {
+      element.classList.remove(
+        "question-focused"
+      );
+    }, 1800);
+  }
+
+  function jumpToQuestion(questionNumber) {
+    setShowNavigator(false);
+
+    const questionIndex =
+      questionNumbers.findIndex(
+        (number) =>
+          Number(number) ===
+          Number(questionNumber)
+      );
+
+    if (questionIndex === -1) {
+      return;
+    }
+
+    const targetPage =
+      Math.floor(
+        questionIndex /
+          QUESTIONS_PER_PAGE
+      ) + 1;
+
+    if (targetPage !== currentPage) {
+      setCurrentPage(targetPage);
+      // Rows remount on page change — scroll after they paint.
+      setTimeout(() => {
+        scrollToQuestion(questionNumber);
+      }, 120);
+    } else {
+      scrollToQuestion(questionNumber);
+    }
+  }
+
+  // Keyboard answering: 1–4 selects an option and M toggles the mark on the
+  // focused question row. Ignored while typing and in read-only review.
+  // Handlers are reached through refs so the listener always calls the
+  // latest closure without re-subscribing (same pattern as saveData).
+  const selectAnswerRef = useRef(null);
+  const toggleMarkRef = useRef(null);
+
+  useEffect(() => {
+    selectAnswerRef.current = selectAnswer;
+    toggleMarkRef.current = toggleMark;
+  });
+
+  useEffect(() => {
+    if (isReviewMode) {
+      return undefined;
+    }
+
+    function handleKeyDown(event) {
+      const target = event.target;
+
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const active =
+        activeQuestionRef.current;
+
+      if (active == null) {
+        return;
+      }
+
+      if (
+        event.key >= "1" &&
+        event.key <= "4"
+      ) {
+        event.preventDefault();
+        selectAnswerRef.current?.(active, event.key);
+      } else if (
+        event.key === "m" ||
+        event.key === "M"
+      ) {
+        event.preventDefault();
+        toggleMarkRef.current?.(active);
+      }
+    }
+
+    document.addEventListener(
+      "keydown",
+      handleKeyDown
+    );
+
+    return () => {
+      document.removeEventListener(
+        "keydown",
+        handleKeyDown
+      );
+    };
+  }, [isReviewMode]);
+
+  const isActiveExam = isExamMode && !isReviewMode;
+
+  const safeAnswers = answers || {};
+  const safeMarked = Array.isArray(marked) ? marked : [];
+  const answeredCount = Object.keys(safeAnswers).length;
+  const totalCount = questionNumbers.length;
+  const unansweredCount = Math.max(totalCount - answeredCount, 0);
+  const progressPct = totalCount > 0 ? Math.round((answeredCount / totalCount) * 100) : 0;
+
   if (!exam) {
     return (
       <section className="page-section">
@@ -690,22 +1085,22 @@ function ExamContent({ id }) {
         <div className="empty-state">
 
           <div className="empty-icon">
-            📝
+            <Icon name="fileText" size={24} />
           </div>
 
           <h3>
-            آزمون پیدا نشد
+            {t("exam.notFound")}
           </h3>
 
           <p>
-            ممکن است این آزمون حذف شده باشد.
+            {t("exam.notFoundDescription")}
           </p>
 
           <Link
             to="/folders"
             className="primary-button"
           >
-            ← بازگشت به فولدرها
+            {t("exam.backToFolders")}
           </Link>
 
         </div>
@@ -717,6 +1112,123 @@ function ExamContent({ id }) {
   return (
     <section className="page-section exam-page-content">
 
+      {isActiveExam ? (
+        <div className="focusbar">
+
+          <Link
+            to={`/folder/${exam.folderId}`}
+            className="focusbar-exit"
+            aria-label={t("exam.workspace.exitExam")}
+            title={t("exam.workspace.exitExam")}
+          >
+            <Icon name="arrowBack" size={18} />
+          </Link>
+
+          <div className="focusbar-id">
+
+            <span className="mode-badge is-timed">
+              <Icon name="timer" size={13} />
+              {t("exam.workspace.timedExam")}
+            </span>
+
+            <span className="focusbar-name">
+              {exam.name}
+            </span>
+
+          </div>
+
+          <div
+            className="focusbar-count"
+            aria-live="polite"
+          >
+
+            <strong>
+              {answeredCount}
+            </strong>
+
+            <span className="focusbar-count-total">
+              /{totalCount}
+            </span>
+
+            <span className="focusbar-count-label">
+              {t("exam.workspace.answered")}
+            </span>
+
+          </div>
+
+          <ExamTimer
+            formatted={timer.formatted}
+            isWarning={timer.isWarning}
+            isCritical={timer.isCritical}
+            isPulsing={timer.isPulsing}
+            totalSeconds={timer.totalSeconds}
+            remaining={timer.remaining}
+          />
+
+          <button
+            type="button"
+            className="focusbar-nav"
+            onClick={() =>
+              setShowNavigator(true)
+            }
+            aria-label={t("exam.workspace.navigator")}
+            title={t("exam.workspace.navigator")}
+          >
+            <Icon name="grid" size={18} />
+            {safeMarked.length > 0 && (
+              <span
+                className="focusbar-nav-dot"
+                aria-hidden="true"
+              />
+            )}
+          </button>
+
+          <button
+            type="button"
+            className="primary-button focusbar-finish"
+            onClick={() =>
+              setShowFinishConfirm(true)
+            }
+          >
+            <Icon name="flag" size={16} />
+            {t("exam.results.finish")}
+          </button>
+
+          <div
+            className="focusbar-progress"
+            aria-hidden="true"
+          >
+            <motion.div
+              className="focusbar-progress-fill"
+              initial={false}
+              animate={{
+                width: `${progressPct}%`,
+              }}
+              transition={{
+                duration: 0.3,
+                ease: "easeOut",
+              }}
+            />
+          </div>
+
+        </div>
+      ) : (
+      <>
+      {isReviewMode && (
+        <div className="review-banner">
+
+          <span className="review-banner-chip">
+            <Icon name="eye" size={14} />
+            {t("exam.workspace.reviewBanner")}
+          </span>
+
+          <span className="review-banner-hint">
+            {t("exam.workspace.reviewHint")}
+          </span>
+
+        </div>
+      )}
+
       <div className="exam-header">
 
         <div className="exam-header-info">
@@ -725,15 +1237,22 @@ function ExamContent({ id }) {
             to={`/folder/${exam.folderId}`}
             className="back-link"
           >
-            ← بازگشت به فولدر
+            {t("exam.back")}
           </Link>
+
+          {!isExamMode && (
+            <span className="mode-badge is-practice">
+              <Icon name="bookOpen" size={13} />
+              {t("exam.workspace.practiceSheet")}
+            </span>
+          )}
 
           <h1>
             {exam.name}
           </h1>
 
           <p>
-            {exam.questionCount} تست
+            {exam.questionCount} {t("exam.questionCount")}
           </p>
 
         </div>
@@ -747,13 +1266,72 @@ function ExamContent({ id }) {
               scrollToNote
             }
           >
-            ↓ یادداشت آزمون
+            {t("exam.noteButton")}
           </button>
+
+          {stopwatchOn && (
+            <div className="stopwatch-cluster" role="group" aria-label={t("exam.stopwatch.elapsed")}>
+              <ExamTimer
+                mode="stopwatch"
+                formatted={stopwatch.formatted}
+              />
+              <button
+                type="button"
+                className="secondary-button btn-icon-only btn-sm"
+                onClick={stopwatch.running ? handleStopwatchPause : stopwatch.start}
+                aria-label={
+                  stopwatch.running
+                    ? t("exam.stopwatch.pause")
+                    : stopwatch.elapsedMs > 0
+                      ? t("exam.stopwatch.resume")
+                      : t("exam.stopwatch.start")
+                }
+                title={
+                  stopwatch.running
+                    ? t("exam.stopwatch.pause")
+                    : stopwatch.elapsedMs > 0
+                      ? t("exam.stopwatch.resume")
+                      : t("exam.stopwatch.start")
+                }
+              >
+                <Icon name={stopwatch.running ? "pause" : "play"} size={15} />
+              </button>
+              <button
+                type="button"
+                className="secondary-button btn-icon-only btn-sm"
+                onClick={stopwatch.reset}
+                disabled={stopwatch.elapsedMs === 0 && !stopwatch.running}
+                aria-label={t("exam.stopwatch.reset")}
+                title={t("exam.stopwatch.reset")}
+              >
+                <Icon name="rotateCcw" size={15} />
+              </button>
+            </div>
+          )}
+
+          {isExamMode && !isReviewMode && (
+            <button
+              type="button"
+              className="primary-button exam-finish-btn"
+              onClick={handleFinishExam}
+            >
+              {t("exam.results.finish")}
+            </button>
+          )}
+
+          {isReviewMode && (
+            <Link
+              to={`/exam/${id}/results`}
+              className="secondary-button"
+            >
+              {t("exam.results.title")}
+            </Link>
+          )}
 
           <div className="marked-counter">
 
-            <span>
-              ⭐
+            <span className="marked-counter-icon">
+              <Icon name="star" size={15} />
             </span>
 
             <strong>
@@ -761,7 +1339,7 @@ function ExamContent({ id }) {
             </strong>
 
             <span>
-              مارک‌شده
+              {t("exam.markedCount")}
             </span>
 
           </div>
@@ -775,7 +1353,7 @@ function ExamContent({ id }) {
         <div className="exam-percentage">
 
           <span>
-            درصد
+            {t("exam.percentage")}
           </span>
 
           <strong>
@@ -786,8 +1364,8 @@ function ExamContent({ id }) {
 
           <small>
             {negativeMarking
-              ? "با نمره منفی"
-              : "بدون نمره منفی"}
+              ? t("exam.withNegative")
+              : t("exam.withoutNegative")}
           </small>
 
         </div>
@@ -799,7 +1377,7 @@ function ExamContent({ id }) {
           </strong>
 
           <span>
-            درست
+            {t("exam.correct")}
           </span>
 
         </div>
@@ -811,7 +1389,7 @@ function ExamContent({ id }) {
           </strong>
 
           <span>
-            غلط
+            {t("exam.wrong")}
           </span>
 
         </div>
@@ -823,12 +1401,14 @@ function ExamContent({ id }) {
           </strong>
 
           <span>
-            نزده
+            {t("exam.unanswered")}
           </span>
 
         </div>
 
       </div>
+      </>
+      )}
 
       <div className="answer-sheet">
 
@@ -870,7 +1450,26 @@ function ExamContent({ id }) {
                 key={
                   questionNumber
                 }
-                className={`question-row ${
+                style={{
+                  "--row-i": Math.min(visibleIndex, 15),
+                }}
+                onFocus={() => {
+                  activeQuestionRef.current =
+                    questionNumber;
+                }}
+                onMouseDown={() => {
+                  activeQuestionRef.current =
+                    questionNumber;
+                }}
+                className={`question-row question-enter ${
+                  isActiveExam
+                    ? "exam-mode-row"
+                    : ""
+                } ${
+                  isReviewMode
+                    ? "is-review"
+                    : ""
+                } ${
                   isMarked
                     ? "question-marked"
                     : ""
@@ -904,7 +1503,7 @@ function ExamContent({ id }) {
                   <div className="answer-row">
 
                     <span className="answer-label">
-                      پاسخ من
+                      {t("exam.myAnswer")}
                     </span>
 
                     <div className="answer-options">
@@ -928,13 +1527,22 @@ function ExamContent({ id }) {
                             correctAnswer !==
                               choice;
 
+                          // Answer-key colors are revealed ONLY in read-only review
+                          // mode (post-completion). During an active exam the key
+                          // must stay hidden — options show selection state only.
+                          const showCorrectHighlight = isReviewMode && answerKeyData[questionNumber] && String(answerKeyData[questionNumber]) === choice;
+                          const showWrongHighlight = isReviewMode && isSelected && answerKeyData[questionNumber] && String(selected) !== String(answerKeyData[questionNumber]);
+
                           return (
                             <button
                               key={
                                 choice
                               }
                               type="button"
-                              aria-label={`گزینه ${choice} برای تست ${questionNumber}`}
+                              aria-label={t("exam.a11y.chooseOption", {
+                                choice,
+                                q: questionNumber,
+                              })}
                               aria-pressed={
                                 isSelected
                               }
@@ -943,11 +1551,11 @@ function ExamContent({ id }) {
                                   ? "selected"
                                   : ""
                               } ${
-                                isCorrect
+                                isCorrect || showCorrectHighlight
                                   ? "answer-correct"
                                   : ""
                               } ${
-                                isWrong
+                                isWrong || showWrongHighlight
                                   ? "answer-wrong"
                                   : ""
                               }`}
@@ -957,6 +1565,7 @@ function ExamContent({ id }) {
                                   choice
                                 )
                               }
+                              disabled={isReviewMode}
                             >
                               {choice}
                             </button>
@@ -968,134 +1577,152 @@ function ExamContent({ id }) {
 
                   </div>
 
-                  <div className="correct-answer-row">
+                  {!isExamMode && (
+                    <div className="correct-answer-row">
 
-                    <span className="correct-answer-label">
-                      پاسخ صحیح
-                    </span>
+                      <span className="correct-answer-label">
+                        {t("exam.correctAnswer")}
+                      </span>
 
-                    <div className="correct-answer-options">
+                      <div className="correct-answer-options">
 
-                      {choices.map(
-                        (choice) => {
+                        {choices.map(
+                          (choice) => {
 
-                          const isCorrect =
-                            correctAnswer ===
-                            choice;
+                            const isCorrect =
+                              correctAnswer ===
+                              choice;
 
-                          const canSelectCorrect =
-                            result ===
-                            "wrong";
+                            const canSelectCorrect =
+                              result ===
+                              "wrong";
 
-                          return (
-                            <button
-                              key={
-                                choice
-                              }
-                              type="button"
-                              disabled={
-                                !canSelectCorrect
-                              }
-                              aria-label={`ثبت گزینه ${choice} به عنوان پاسخ صحیح تست ${questionNumber}`}
-                              aria-pressed={
-                                isCorrect
-                              }
-                              className={`correct-answer-choice ${
-                                isCorrect
-                                  ? "selected"
-                                  : ""
-                              }`}
-                              onClick={() =>
-                                selectCorrectAnswer(
-                                  questionNumber,
+                            return (
+                              <button
+                                key={
                                   choice
-                                )
-                              }
-                            >
-                              {choice}
-                            </button>
-                          );
-                        }
-                      )}
+                                }
+                                type="button"
+                                disabled={
+                                  !canSelectCorrect
+                                }
+                                aria-label={t("exam.a11y.setCorrectAnswer", {
+                                  choice,
+                                  q: questionNumber,
+                                })}
+                                aria-pressed={
+                                  isCorrect
+                                }
+                                className={`correct-answer-choice ${
+                                  isCorrect
+                                    ? "selected"
+                                    : ""
+                                }`}
+                                onClick={() =>
+                                  selectCorrectAnswer(
+                                    questionNumber,
+                                    choice
+                                  )
+                                }
+                                disabled={isReviewMode}
+                              >
+                                {choice}
+                              </button>
+                            );
+                          }
+                        )}
+
+                      </div>
 
                     </div>
+                  )}
+
+                </div>
+
+                {!isExamMode && (
+                  <div className="question-result-actions">
+
+                    <button
+                      type="button"
+                      className={`result-button result-correct ${
+                        result ===
+                        "correct"
+                          ? "selected"
+                          : ""
+                      }`}
+                      aria-label={t("exam.a11y.markCorrect", {
+                        q: questionNumber,
+                      })}
+                      aria-pressed={
+                        result ===
+                        "correct"
+                      }
+                      disabled={
+                        !selected ||
+                        isReviewMode
+                      }
+                      onClick={() =>
+                        setQuestionResult(
+                          questionNumber,
+                          "correct"
+                        )
+                      }
+                      title={
+                        selected
+                          ? t("exam.a11y.correct")
+                          : t("exam.a11y.needAnswerFirst")
+                      }
+                    >
+                      <Icon name="check" size={15} />
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`result-button result-wrong ${
+                        result ===
+                        "wrong"
+                          ? "selected"
+                          : ""
+                      }`}
+                      aria-label={t("exam.a11y.markWrong", {
+                        q: questionNumber,
+                      })}
+                      aria-pressed={
+                        result ===
+                        "wrong"
+                      }
+                      disabled={
+                        !selected ||
+                        isReviewMode
+                      }
+                      onClick={() =>
+                        setQuestionResult(
+                          questionNumber,
+                          "wrong"
+                        )
+                      }
+                      title={
+                        selected
+                          ? t("exam.a11y.wrong")
+                          : t("exam.a11y.needAnswerFirst")
+                      }
+                    >
+                      <Icon name="close" size={15} />
+                    </button>
 
                   </div>
-
-                </div>
-
-                <div className="question-result-actions">
-
-                  <button
-                    type="button"
-                    className={`result-button result-correct ${
-                      result ===
-                      "correct"
-                        ? "selected"
-                        : ""
-                    }`}
-                    aria-label={`درست بودن تست ${questionNumber}`}
-                    aria-pressed={
-                      result ===
-                      "correct"
-                    }
-                    disabled={
-                      !selected
-                    }
-                    onClick={() =>
-                      setQuestionResult(
-                        questionNumber,
-                        "correct"
-                      )
-                    }
-                    title={
-                      selected
-                        ? "درست"
-                        : "ابتدا یک گزینه را انتخاب کن"
-                    }
-                  >
-                    ✓
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`result-button result-wrong ${
-                      result ===
-                      "wrong"
-                        ? "selected"
-                        : ""
-                    }`}
-                    aria-label={`غلط بودن تست ${questionNumber}`}
-                    aria-pressed={
-                      result ===
-                      "wrong"
-                    }
-                    disabled={
-                      !selected
-                    }
-                    onClick={() =>
-                      setQuestionResult(
-                        questionNumber,
-                        "wrong"
-                      )
-                    }
-                    title={
-                      selected
-                        ? "غلط"
-                        : "ابتدا یک گزینه را انتخاب کن"
-                    }
-                  >
-                    ✕
-                  </button>
-
-                </div>
+                )}
 
                 <button
                   type="button"
                   aria-label={
                     isMarked
-                      ? `برداشتن مارک تست ${questionNumber}`
-                      : `مارک کردن تست ${questionNumber}`
+                      ? t("exam.a11y.unmarkQuestion", {
+                          q: questionNumber,
+                        })
+                      : t("exam.a11y.markQuestion", {
+                          q: questionNumber,
+                        })
                   }
                   aria-pressed={
                     isMarked
@@ -1110,15 +1737,22 @@ function ExamContent({ id }) {
                       questionNumber
                     )
                   }
+                  disabled={isReviewMode}
                   title={
                     isMarked
-                      ? "برداشتن علامت"
-                      : "علامت‌گذاری"
+                      ? t("exam.a11y.unmarkQuestion", {
+                          q: questionNumber,
+                        })
+                      : t("exam.a11y.markQuestion", {
+                          q: questionNumber,
+                        })
                   }
                 >
-                  {isMarked
-                    ? "★"
-                    : "☆"}
+                  <Icon
+                    name="star"
+                    size={16}
+                    fill={isMarked ? "currentColor" : "none"}
+                  />
                 </button>
 
               </div>
@@ -1147,12 +1781,12 @@ function ExamContent({ id }) {
               )
             }
           >
-            ← قبلی
+            {t("exam.pagination.previous")}
           </button>
 
           <span>
-            صفحه{" "}
-            {currentPage} از{" "}
+            {t("exam.pagination.page")}{" "}
+            {currentPage} {t("exam.pagination.of")}{" "}
             {totalPages}
           </span>
 
@@ -1173,7 +1807,7 @@ function ExamContent({ id }) {
               )
             }
           >
-            بعدی →
+            {t("exam.pagination.next")}
           </button>
 
         </div>
@@ -1186,12 +1820,16 @@ function ExamContent({ id }) {
 
         <div className="note-header">
 
+          <span className="note-header-icon" aria-hidden="true">
+            <Icon name="notebook" size={17} />
+          </span>
+
           <h2>
-            📝 یادداشت آزمون
+            {t("exam.note.title")}
           </h2>
 
           <span>
-            این یادداشت فقط مربوط به همین آزمون است.
+            {t("exam.note.description")}
           </span>
 
         </div>
@@ -1203,10 +1841,86 @@ function ExamContent({ id }) {
               event.target.value
             )
           }
-          placeholder="یادداشت‌های مربوط به این آزمون..."
+          placeholder={t("exam.note.placeholder")}
+          disabled={isReviewMode}
         />
 
       </div>
+
+      <QuestionNavigator
+        open={showNavigator}
+        onClose={() =>
+          setShowNavigator(false)
+        }
+        questionNumbers={questionNumbers}
+        answers={answers}
+        marked={marked}
+        onJump={jumpToQuestion}
+      />
+
+      <Modal
+        open={showFinishConfirm}
+        onClose={() =>
+          setShowFinishConfirm(false)
+        }
+        title={t("exam.workspace.finishTitle")}
+        subtitle={t("exam.results.finishConfirm")}
+        size="sm"
+      >
+        <div className="finish-summary">
+          <div className="finish-summary-row">
+            <Icon name="checkCircle" size={16} />
+            <span>
+              {t("exam.workspace.finishSummary", {
+                answered: answeredCount,
+                total: totalCount,
+              })}
+            </span>
+          </div>
+          {unansweredCount > 0 && (
+            <div className="finish-summary-row is-warn">
+              <Icon name="alertTriangle" size={16} />
+              <span>
+                {t("exam.workspace.finishUnanswered", {
+                  count: unansweredCount,
+                })}
+              </span>
+            </div>
+          )}
+          {safeMarked.length > 0 && (
+            <div className="finish-summary-row is-marked">
+              <Icon name="star" size={16} />
+              <span>
+                {t("exam.workspace.finishMarked", {
+                  count: safeMarked.length,
+                })}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="modal-buttons">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() =>
+              setShowFinishConfirm(false)
+            }
+          >
+            {t("exam.workspace.keepGoing")}
+          </button>
+          <button
+            type="button"
+            className="danger-button"
+            onClick={() => {
+              setShowFinishConfirm(false);
+              handleFinishExam();
+            }}
+          >
+            <Icon name="flag" size={15} />
+            {t("exam.workspace.finishAnyway")}
+          </button>
+        </div>
+      </Modal>
 
     </section>
   );

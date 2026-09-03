@@ -1,16 +1,30 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
   getFolders,
+  getExams,
+  getExamData,
   createFolder,
   updateFolder,
   deleteFolder,
+  getSubjects,
 } from "../services/dataService";
+import { useTranslation } from "../i18n";
+import { useToast } from "../context/ToastContext";
+import Icon from "../components/ui/Icon";
+import Modal from "../components/ui/Modal";
+import PageHeader from "../components/ui/PageHeader";
 
 function Folders() {
+  const { t } = useTranslation();
+  const { showToast } = useToast();
   const [folders, setFolders] = useState(() => {
     return getFolders();
+  });
+
+  const [subjects, setSubjects] = useState(() => {
+    return getSubjects();
   });
 
   const [showModal, setShowModal] =
@@ -19,21 +33,29 @@ function Folders() {
   const [folderName, setFolderName] =
     useState("");
 
+  const [selectedSubjectId, setSelectedSubjectId] =
+    useState("");
+
+  const [filterSubject, setFilterSubject] =
+    useState("all");
+
   function refreshFolders() {
     setFolders(getFolders());
+    setSubjects(getSubjects());
   }
 
   function handleCreateFolder() {
     const name = folderName.trim();
 
     if (!name) {
-      alert("اسم فولدر را وارد کن");
+      showToast(t("folders.create.noName"), "warning");
       return;
     }
 
     const newFolder = {
       id: Date.now(),
       name,
+      subjectId: selectedSubjectId ? selectedSubjectId : null,
       createdAt:
         new Date().toISOString(),
     };
@@ -42,19 +64,20 @@ function Folders() {
       createFolder(newFolder);
 
     if (!saved) {
-      alert("ساخت فولدر انجام نشد.");
+      showToast(t("folders.create.failed"), "error");
       return;
     }
 
     refreshFolders();
 
     setFolderName("");
+    setSelectedSubjectId("");
     setShowModal(false);
   }
 
   function handleDeleteFolder(id) {
     const ok = window.confirm(
-      "این فولدر و آزمون‌های داخلش حذف شوند؟"
+      t("folders.delete.confirm")
     );
 
     if (!ok) {
@@ -65,8 +88,9 @@ function Folders() {
       deleteFolder(id);
 
     if (!deleted) {
-      alert(
-        "حذف فولدر انجام نشد."
+      showToast(
+        t("folders.delete.failed"),
+        "error"
       );
       return;
     }
@@ -76,7 +100,7 @@ function Folders() {
 
   function handleRenameFolder(folder) {
     const newName = prompt(
-      "نام جدید:",
+      t("folders.rename.prompt"),
       folder.name
     );
 
@@ -93,8 +117,9 @@ function Folders() {
       );
 
     if (!updated) {
-      alert(
-        "تغییر نام فولدر انجام نشد."
+      showToast(
+        t("folders.rename.failed"),
+        "error"
       );
       return;
     }
@@ -102,172 +127,322 @@ function Folders() {
     refreshFolders();
   }
 
+  function handleAssignSubject(folder, subjectId) {
+    const updated = updateFolder(folder.id, {
+      subjectId: subjectId || null,
+    });
+
+    if (!updated) {
+      showToast(t("folders.subject.assignFailed"), "error");
+      return;
+    }
+
+    refreshFolders();
+  }
+
+  const subjectById = {};
+  subjects.forEach((s) => {
+    subjectById[String(s.id)] = s;
+  });
+
+  const visibleFolders =
+    filterSubject === "all"
+      ? folders
+      : filterSubject === "none"
+        ? folders.filter((f) => f.subjectId == null)
+        : folders.filter(
+            (f) =>
+              f.subjectId != null &&
+              String(f.subjectId) === String(filterSubject)
+          );
+
+  // Answered/total per folder across its exams → card progress hairlines
+  const folderProgress = useMemo(() => {
+    const map = {};
+    for (const f of folders) map[String(f.id)] = { answered: 0, total: 0 };
+    let exams;
+    try {
+      exams = getExams() || [];
+    } catch {
+      exams = [];
+    }
+    for (const exam of exams) {
+      const fid = String(exam.folderId);
+      if (!map[fid]) map[fid] = { answered: 0, total: 0 };
+      map[fid].total += Number(exam.questionCount) || 0;
+      try {
+        const ed = getExamData(exam.id);
+        if (ed?.answers) map[fid].answered += Object.keys(ed.answers).length;
+      } catch {
+        // ignore unreadable records
+      }
+    }
+    return map;
+  }, [folders]);
+
   return (
     <section className="page-section">
 
-      <div className="page-title folders-page-title">
+      <PageHeader
+        icon="folder"
+        title={t("folders.title")}
+        subtitle={t("folders.subtitle")}
+        actions={
+          <button
+            className="primary-button"
+            onClick={() =>
+              setShowModal(true)
+            }
+          >
+            <Icon name="plus" size={15} />
+            {t("folders.new")}
+          </button>
+        }
+      />
 
-        <div>
-          <h1>📁 فولدرها</h1>
+      {subjects.length > 0 && (
+        <div className="folders-subject-filter">
 
-          <p>
-            مدیریت دسته‌بندی آزمون‌ها
-          </p>
+          <button
+            type="button"
+            className={`filter-chip ${filterSubject === "all" ? "active" : ""}`}
+            onClick={() => setFilterSubject("all")}
+          >
+            {t("folders.filter.all")}
+          </button>
+
+          {subjects.map((subject) => (
+            <button
+              key={subject.id}
+              type="button"
+              className={`filter-chip ${filterSubject === String(subject.id) ? "active" : ""}`}
+              onClick={() => setFilterSubject(String(subject.id))}
+            >
+              <span
+                className="filter-dot"
+                style={{ backgroundColor: subject.color || "#4A90E2" }}
+              />
+              {subject.name}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            className={`filter-chip ${filterSubject === "none" ? "active" : ""}`}
+            onClick={() => setFilterSubject("none")}
+          >
+            {t("folders.filter.none")}
+          </button>
+
         </div>
+      )}
 
-        <button
-          className="primary-button"
-          onClick={() =>
-            setShowModal(true)
-          }
-        >
-          + فولدر جدید
-        </button>
-
-      </div>
-
-      {folders.length === 0 ? (
+      {visibleFolders.length === 0 ? (
 
         <div className="empty-state">
 
           <div className="empty-icon">
-            📁
+            <Icon name="folder" size={26} />
           </div>
 
           <h3>
-            هنوز فولدری ندارید
+            {folders.length === 0
+              ? t("folders.empty.title")
+              : t("folders.empty.filtered")}
           </h3>
 
           <p>
-            اولین فولدر خودت را بساز
+            {t("folders.empty.description")}
           </p>
 
         </div>
 
       ) : (
 
-        <div className="folder-grid">
+        <div className="folder-grid rise-list">
 
-          {folders.map((folder) => (
+          {visibleFolders.map((folder) => {
 
-            <div
-              key={folder.id}
-              className="folder-card"
-            >
+            const folderSubject =
+              folder.subjectId != null
+                ? subjectById[String(folder.subjectId)]
+                : null;
 
-              <Link
-                to={`/folder/${folder.id}`}
-                className="folder-main"
+            const prog = folderProgress[String(folder.id)] || { answered: 0, total: 0 };
+            const pct = prog.total > 0 ? Math.min(Math.round((prog.answered / prog.total) * 100), 100) : 0;
+            const subjectColor = folderSubject?.color || null;
+
+            return (
+
+              <div
+                key={folder.id}
+                className="folder-card"
               >
 
-                <div className="folder-icon">
-                  📁
+                <Link
+                  to={`/folder/${folder.id}`}
+                  className="folder-main"
+                >
+
+                  <div
+                    className={`folder-icon ${subjectColor ? "is-tinted" : ""}`}
+                    style={subjectColor ? {
+                      background: `color-mix(in srgb, ${subjectColor} 13%, transparent)`,
+                      color: subjectColor,
+                      boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${subjectColor} 32%, transparent)`,
+                    } : undefined}
+                  >
+                    <Icon name="folder" size={22} />
+                  </div>
+
+                  <div className="folder-info">
+
+                    <h3 title={folder.name}>
+                      {folder.name}
+                    </h3>
+
+                  </div>
+
+                </Link>
+
+                <div className="folder-actions">
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleRenameFolder(
+                        folder
+                      )
+                    }
+                    aria-label={t("common.edit")}
+                  >
+                    <Icon name="pen" size={16} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleDeleteFolder(
+                        folder.id
+                      )
+                    }
+                    aria-label={t("common.delete")}
+                  >
+                    <Icon name="trash" size={16} />
+                  </button>
+
                 </div>
 
-                <div className="folder-info">
+                {subjects.length > 0 && (
+                  <div className="folder-subject-row">
+                    <span
+                      className="filter-dot"
+                      style={{ backgroundColor: folderSubject?.color || "var(--border-hover)" }}
+                      aria-hidden="true"
+                    />
+                    <select
+                      className="folder-subject-select"
+                      value={
+                        folder.subjectId != null
+                          ? String(folder.subjectId)
+                          : ""
+                      }
+                      onChange={(event) =>
+                        handleAssignSubject(folder, event.target.value)
+                      }
+                      aria-label={t("folders.subject.assign")}
+                      title={folderSubject?.name || t("folders.subject.assign")}
+                    >
+                      <option value="">
+                        {t("folders.subject.none")}
+                      </option>
+                      {subjects.map((subject) => (
+                        <option key={subject.id} value={String(subject.id)}>
+                          {subject.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
-                  <h3>
-                    {folder.name}
-                  </h3>
-
-                </div>
-
-              </Link>
-
-              <div className="folder-actions">
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleRenameFolder(
-                      folder
-                    )
-                  }
-                >
-                  ✏️
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleDeleteFolder(
-                      folder.id
-                    )
-                  }
-                >
-                  🗑️
-                </button>
+                {pct > 0 && (
+                  <span className="folder-progress" aria-hidden="true">
+                    <span style={{ width: `${pct}%` }} />
+                  </span>
+                )}
 
               </div>
 
-            </div>
-
-          ))}
+            );
+          })}
 
         </div>
 
       )}
 
-      {showModal && (
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        title={t("folders.create.title")}
+      >
+        <label className="modal-label">
+          {t("folders.create.nameLabel")}
+        </label>
 
-        <div
-          className="modal-overlay"
-          onClick={() =>
-            setShowModal(false)
+        <input
+          className="input-field"
+          value={folderName}
+          onChange={(event) =>
+            setFolderName(
+              event.target.value
+            )
           }
-        >
+          placeholder={t("folders.create.namePlaceholder")}
+        />
 
-          <div
-            className="modal"
-            onClick={(event) =>
-              event.stopPropagation()
-            }
-          >
+        {subjects.length > 0 && (
+          <>
+            <label className="modal-label">
+              {t("folders.subject.label")}
+            </label>
 
-            <h2>
-              ساخت فولدر جدید
-            </h2>
-
-            <input
-              value={folderName}
+            <select
+              className="modal-select"
+              value={selectedSubjectId}
               onChange={(event) =>
-                setFolderName(
-                  event.target.value
-                )
+                setSelectedSubjectId(event.target.value)
               }
-              placeholder="مثلاً ریاضی"
-            />
+            >
+              <option value="">
+                {t("folders.subject.none")}
+              </option>
+              {subjects.map((subject) => (
+                <option key={subject.id} value={String(subject.id)}>
+                  {subject.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
 
-            <div className="modal-buttons">
+        <div className="modal-buttons">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setShowModal(false)}
+          >
+            {t("folders.create.cancel")}
+          </button>
 
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() =>
-                  setShowModal(false)
-                }
-              >
-                لغو
-              </button>
-
-              <button
-                type="button"
-                className="primary-button"
-                onClick={
-                  handleCreateFolder
-                }
-              >
-                ساخت
-              </button>
-
-            </div>
-
-          </div>
-
+          <button
+            type="button"
+            className="primary-button"
+            onClick={handleCreateFolder}
+          >
+            {t("folders.create.submit")}
+          </button>
         </div>
-
-      )}
-
+      </Modal>
     </section>
   );
 }

@@ -5,11 +5,13 @@ import {
 } from "react-router-dom";
 
 import { supabase } from "../services/supabaseClient";
+import { useTranslation } from "../i18n";
+import LogoMark from "../components/ui/LogoMark";
 
 
 
 function Login() {
-
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
 
@@ -84,9 +86,7 @@ function Login() {
 
 
       setError(
-
-        "ایمیل یا رمز عبور اشتباه است."
-
+        t("auth.login.error")
       );
 
 
@@ -130,6 +130,11 @@ function Login() {
 
 
 
+      <aside className="auth-art" aria-hidden="true">
+        <LogoMark size={72} />
+        <span className="auth-art-brand">TestBox</span>
+      </aside>
+
       <div className="auth-card">
 
 
@@ -147,9 +152,7 @@ function Login() {
 
 
           <h1>
-
-            ورود به حساب
-
+            {t("auth.login.title")}
           </h1>
 
 
@@ -160,9 +163,7 @@ function Login() {
 
 
           <p>
-
-            برای همگام‌سازی اطلاعات وارد حساب خود شوید.
-
+            {t("auth.login.subtitle")}
           </p>
 
 
@@ -201,9 +202,7 @@ function Login() {
 
 
           <label>
-
-            ایمیل
-
+            {t("auth.email")}
           </label>
 
 
@@ -247,9 +246,7 @@ function Login() {
 
 
           <label>
-
-            رمز عبور
-
+            {t("auth.password")}
           </label>
 
 
@@ -349,10 +346,8 @@ function Login() {
 
 
             {loading
-
-              ? "در حال ورود..."
-
-              : "ورود"}
+              ? t("auth.login.loading")
+              : t("auth.login.submit")}
 
 
 
@@ -391,7 +386,7 @@ function Login() {
 
 
 
-          حساب نداری؟
+          {t("auth.noAccount")}
 
 
 
@@ -416,7 +411,7 @@ function Login() {
 
 
 
-            ساخت حساب
+            {t("auth.createAccount")}
 
 
 

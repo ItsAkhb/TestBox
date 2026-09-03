@@ -11,6 +11,10 @@ import {
   getFolders,
   getExamData,
 } from "../services/dataService";
+import { useTranslation } from "../i18n";
+import Icon from "../components/ui/Icon";
+import PageHeader from "../components/ui/PageHeader";
+import EmptyArt from "../components/ui/EmptyArt";
 
 function getMarkedGroups(exams, folders) {
   const grouped = [];
@@ -84,6 +88,7 @@ function readMarkedGroups() {
 
 function Marked() {
   const location = useLocation();
+  const { t } = useTranslation();
 
   const [groups, setGroups] = useState(() =>
     readMarkedGroups()
@@ -148,65 +153,48 @@ function Marked() {
   return (
     <section className="page-section marked-page">
 
-      <div className="page-title marked-page-title">
+      <PageHeader
+        icon="star"
+        iconFilled
+        tone="warm"
+        title={t("marked.title")}
+        subtitle={t("marked.subtitle")}
+        meta={
+          totalMarked > 0 && (
+            <div className="marked-total">
 
-        <div className="marked-page-heading">
+              <strong>
+                {totalMarked}
+              </strong>
 
-          <div className="marked-page-icon">
-            ⭐
-          </div>
+              <span>
+                {t("marked.total")}
+              </span>
 
-          <div>
-            <h1>
-              تست‌های مارک‌شده
-            </h1>
-
-            <p>
-              تست‌هایی که برای بررسی دوباره
-              علامت زده‌اید.
-            </p>
-          </div>
-
-        </div>
-
-        {totalMarked > 0 && (
-          <div className="marked-total">
-
-            <strong>
-              {totalMarked}
-            </strong>
-
-            <span>
-              تست
-            </span>
-
-          </div>
-        )}
-
-      </div>
+            </div>
+          )
+        }
+      />
 
       {groups.length === 0 ? (
 
         <div className="empty-state marked-empty-state">
 
-          <div className="empty-icon">
-            ☆
-          </div>
+          <EmptyArt variant="star" />
 
           <h3>
-            هنوز تستی مارک نشده
+            {t("marked.empty.title")}
           </h3>
 
           <p>
-            تست‌هایی که می‌خواهی بعداً دوباره
-            بررسی کنی را ⭐ کن.
+            {t("marked.empty.description")}
           </p>
 
         </div>
 
       ) : (
 
-        <div className="marked-groups">
+        <div className="marked-groups rise-list">
 
           {groups.map((group) => (
 
@@ -220,7 +208,7 @@ function Marked() {
                 <div className="marked-group-info">
 
                   <span className="marked-folder">
-                    📁
+                    <Icon name="folder" size={14} />
 
                     <span>
                       {group.folderName}
@@ -228,7 +216,7 @@ function Marked() {
                   </span>
 
                   <h3>
-                    📝
+                    <Icon name="fileText" size={16} />
 
                     <span>
                       {group.examName}
@@ -244,7 +232,7 @@ function Marked() {
                   </strong>
 
                   <span>
-                    تست
+                    {t("marked.total")}
                   </span>
 
                 </div>
@@ -260,11 +248,11 @@ function Marked() {
                       key={`${group.examId}-${questionNumber}`}
                       to={`/exam/${group.examId}?question=${questionNumber}`}
                       className="marked-question"
-                      title={`رفتن به تست ${questionNumber}`}
+                      title={t("marked.goToQuestion", { q: questionNumber })}
                     >
 
                       <span className="marked-question-star">
-                        ★
+                        <Icon name="star" size={14} fill="currentColor" />
                       </span>
 
                       <span className="marked-question-number">
@@ -272,7 +260,7 @@ function Marked() {
                       </span>
 
                       <span className="marked-question-arrow">
-                        ←
+                        <Icon name="arrowBack" size={14} />
                       </span>
 
                     </Link>

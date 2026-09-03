@@ -6,18 +6,66 @@ import {
   validateBackup,
   clearAll,
 } from "../services/dataService";
+import { useTranslation } from "../i18n";
+import { useToast } from "../context/ToastContext";
+import { searchCities } from "../services/weather";
+import Icon from "../components/ui/Icon";
+import PageHeader from "../components/ui/PageHeader";
 
 function Settings() {
+  const { t, language } = useTranslation();
   const fileInputRef = useRef(null);
+  const { showToast } = useToast();
 
-  const [message, setMessage] = useState("");
+  const [weatherSearch, setWeatherSearch] = useState("");
+  const [weatherResults, setWeatherResults] = useState([]);
+  const [weatherSearching, setWeatherSearching] = useState(false);
+  const [weatherError, setWeatherError] = useState("");
 
-  function showMessage(text) {
-    setMessage(text);
+  const searchTimeoutRef = useRef(null);
 
-    setTimeout(() => {
-      setMessage("");
-    }, 3000);
+  const currentLocation = (() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("testbox-settings") || "null");
+      return s?.weatherLocation?.name || "Tehran";
+    } catch { return "Tehran"; }
+  })();
+
+  function handleWeatherSearch(value) {
+    setWeatherSearch(value);
+    setWeatherError("");
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (value.trim().length < 2) {
+      setWeatherResults([]);
+      setWeatherSearching(false);
+      return;
+    }
+    setWeatherSearching(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const lang = language === "fa" ? "fa" : "en";
+        const results = await searchCities(value, lang);
+        setWeatherResults(results);
+        if (results.length === 0) setWeatherError(t("settings.weather.noResults"));
+      } catch {
+        setWeatherError(t("settings.weather.error"));
+      } finally {
+        setWeatherSearching(false);
+      }
+    }, 400);
+  }
+
+  function selectWeatherCity(city) {
+    try {
+      const settings = JSON.parse(localStorage.getItem("testbox-settings") || "{}");
+      settings.weatherLocation = { lat: city.latitude, lon: city.longitude, name: city.name };
+      localStorage.setItem("testbox-settings", JSON.stringify(settings));
+      setWeatherSearch("");
+      setWeatherResults([]);
+      showToast(`${city.name} ✓`, "success");
+    } catch {
+      showToast(t("settings.weather.error"), "error");
+    }
   }
 
   function exportBackup() {
@@ -56,8 +104,9 @@ function Settings() {
 
       URL.revokeObjectURL(url);
 
-      showMessage(
-        "پشتیبان با موفقیت ساخته شد ✓"
+      showToast(
+        t("settings.export.success"),
+        "success"
       );
     } catch (error) {
       console.error(
@@ -65,8 +114,9 @@ function Settings() {
         error
       );
 
-      showMessage(
-        "ساخت پشتیبان انجام نشد."
+      showToast(
+        t("settings.export.failed"),
+        "error"
       );
     }
   }
@@ -97,7 +147,7 @@ function Settings() {
         }
 
         const confirmed = window.confirm(
-          "با وارد کردن این پشتیبان، اطلاعات فعلی TestBox جایگزین می‌شود. ادامه می‌دهی؟"
+          t("settings.import.confirm")
         );
 
         if (!confirmed) {
@@ -112,8 +162,9 @@ function Settings() {
           );
         }
 
-        showMessage(
-          "پشتیبان با موفقیت بازیابی شد ✓"
+        showToast(
+          t("settings.import.success"),
+          "success"
         );
 
         setTimeout(() => {
@@ -125,8 +176,9 @@ function Settings() {
           error
         );
 
-        showMessage(
-          "فایل پشتیبان معتبر نیست."
+        showToast(
+          t("settings.import.failed"),
+          "error"
         );
       } finally {
         event.target.value = "";
@@ -134,8 +186,9 @@ function Settings() {
     };
 
     reader.onerror = () => {
-      showMessage(
-        "خواندن فایل پشتیبان انجام نشد."
+      showToast(
+        t("settings.import.readFailed"),
+        "error"
       );
 
       event.target.value = "";
@@ -146,7 +199,7 @@ function Settings() {
 
   function clearAllData() {
     const firstConfirm = window.confirm(
-      "تمام فولدرها، آزمون‌ها، جواب‌ها، مارک‌ها و یادداشت‌ها حذف می‌شوند. مطمئنی؟"
+      t("settings.danger.confirm1")
     );
 
     if (!firstConfirm) {
@@ -154,7 +207,7 @@ function Settings() {
     }
 
     const secondConfirm = window.confirm(
-      "این کار قابل بازگشت نیست. قبلش Backup داری؟"
+      t("settings.danger.confirm2")
     );
 
     if (!secondConfirm) {
@@ -164,8 +217,9 @@ function Settings() {
     const cleared = clearAll();
 
     if (!cleared) {
-      showMessage(
-        "حذف اطلاعات انجام نشد."
+      showToast(
+        t("settings.danger.failed"),
+        "error"
       );
 
       return;
@@ -177,28 +231,25 @@ function Settings() {
   return (
     <section className="page-section">
 
-      <div className="page-title">
-
-        <div>
-          <h1>⚙️ تنظیمات</h1>
-
-          <p>
-            مدیریت اطلاعات و پشتیبان TestBox
-          </p>
-        </div>
-
-      </div>
+      <PageHeader
+        icon="settings"
+        title={t("settings.title")}
+        subtitle={t("settings.subtitle")}
+      />
 
       <div className="settings-section">
 
         <div className="settings-section-header">
 
+          <span className="settings-section-icon" aria-hidden="true">
+            <Icon name="database" size={17} />
+          </span>
+
           <div>
-            <h2>💾 اطلاعات</h2>
+            <h2>{t("settings.data.title")}</h2>
 
             <p>
-              از اطلاعاتت نسخه پشتیبان بگیر
-              یا یک Backup قبلی را برگردان.
+              {t("settings.data.description")}
             </p>
           </div>
 
@@ -212,16 +263,16 @@ function Settings() {
           >
 
             <span className="settings-action-icon">
-              ↓
+              <Icon name="download" size={18} />
             </span>
 
             <span>
               <strong>
-                خروجی گرفتن
+                {t("settings.export")}
               </strong>
 
               <small>
-                ذخیره تمام اطلاعات به صورت فایل JSON
+                {t("settings.export.description")}
               </small>
             </span>
 
@@ -233,16 +284,16 @@ function Settings() {
           >
 
             <span className="settings-action-icon">
-              ↑
+              <Icon name="upload" size={18} />
             </span>
 
             <span>
               <strong>
-                وارد کردن Backup
+                {t("settings.import")}
               </strong>
 
               <small>
-                بازیابی اطلاعات از فایل JSON
+                {t("settings.import.description")}
               </small>
             </span>
 
@@ -260,31 +311,82 @@ function Settings() {
 
       </div>
 
+      <div className="settings-section">
+        <div className="settings-section-header">
+          <span className="settings-section-icon" aria-hidden="true">
+            <Icon name="mapPin" size={17} />
+          </span>
+          <div>
+            <h2>{t("settings.weather.title")}</h2>
+            <p>{t("settings.weather.description")}</p>
+            <p className="wx-current">
+              {t("settings.weather.current", "Current")}: {currentLocation}
+            </p>
+          </div>
+        </div>
+        <div className="wx-search">
+          <input
+            type="text"
+            className="input-field"
+            value={weatherSearch}
+            onChange={(e) => handleWeatherSearch(e.target.value)}
+            placeholder={t("settings.weather.searchPlaceholder", "Search city...")}
+          />
+          {weatherSearching && (
+            <p className="wx-hint">{t("settings.weather.searching", "Searching...")}</p>
+          )}
+          {weatherError && !weatherSearching && (
+            <p className="wx-error">{weatherError}</p>
+          )}
+          {weatherResults.length > 0 && (
+            <div className="wx-results" role="listbox">
+              {weatherResults.map((city, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  role="option"
+                  aria-selected="false"
+                  onClick={() => selectWeatherCity(city)}
+                  className="wx-result"
+                >
+                  <Icon name="mapPin" size={14} />
+                  <strong>{city.name}</strong>
+                  <span className="wx-result-sub">
+                    {city.admin1 ? `${city.admin1}, ` : ""}{city.country}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="settings-danger">
 
-        <div>
-          <h2>⚠️ منطقه خطر</h2>
+        <div className="settings-danger-info">
 
-          <p>
-            حذف تمام اطلاعات ذخیره‌شده در این
-            مرورگر.
-          </p>
+          <span className="settings-section-icon is-danger" aria-hidden="true">
+            <Icon name="alertTriangle" size={17} />
+          </span>
+
+          <div>
+            <h2>{t("settings.danger.title")}</h2>
+
+            <p>
+              {t("settings.danger.description")}
+            </p>
+          </div>
+
         </div>
 
         <button
           className="danger-button"
           onClick={clearAllData}
         >
-          حذف تمام اطلاعات
+          {t("settings.danger.button")}
         </button>
 
       </div>
-
-      {message && (
-        <div className="settings-message">
-          {message}
-        </div>
-      )}
 
     </section>
   );

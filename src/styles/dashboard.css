@@ -1,0 +1,408 @@
+/* =========================================================
+   Dashboard — Today briefing (editorial)
+========================================================= */
+
+.today-brief {
+  margin-bottom: 30px;
+}
+
+.today-stage {
+  position: relative;
+  overflow: hidden;
+
+  padding: 28px 28px 22px;
+
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-md);
+}
+
+/* Signature ink hairline across the top of the stage */
+.today-stage::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--warm));
+}
+
+.today-eyebrow {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.today-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.today-count {
+  font-size: 64px;
+  font-weight: 800;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+
+  background: linear-gradient(120deg, var(--primary) 0%, var(--warm) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.today-count-unit {
+  color: var(--muted);
+  font-size: var(--text-md);
+  font-weight: 550;
+}
+
+.today-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+/* Each metric is an intentional flex unit: [icon] value label.
+   Slots keep icon/value/label separated at any text length. */
+.today-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.today-meta-item .meta-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  color: var(--warm);
+}
+
+.today-meta-item strong {
+  flex-shrink: 0;
+
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.today-meta-item .meta-lb {
+  white-space: nowrap;
+}
+
+.today-meta-dot {
+  opacity: 0.6;
+}
+
+/* ---------- Dashboard — 7-day rhythm strip ---------- */
+
+.today-week {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+
+  height: 76px;
+  margin-top: 20px;
+  padding-top: 14px;
+
+  border-top: 1px dashed var(--border);
+}
+
+.today-week-day {
+  flex: 1;
+  min-width: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.today-week-bar {
+  width: 100%;
+  max-width: 26px;
+  min-height: 4px;
+
+  border-radius: var(--radius-full);
+
+  background: linear-gradient(to top, var(--primary), var(--primary-hover));
+  opacity: 0.28;
+
+  transition: height 0.4s var(--ease-out), opacity var(--transition);
+}
+
+.today-week-day:last-child .today-week-bar {
+  opacity: 1;
+  background: linear-gradient(to top, var(--primary), var(--warm));
+}
+
+.today-week-label {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.today-week-caption {
+  margin: 10px 0 0;
+
+  color: var(--muted);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+
+/* ---------- Dashboard — resume CTA ---------- */
+
+.resume-cta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  padding: 16px 18px;
+  margin-bottom: 30px;
+
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-xl);
+
+  text-decoration: none;
+
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition),
+    border-color var(--transition);
+}
+
+.resume-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary);
+}
+
+.resume-cta:active {
+  transform: scale(0.99);
+}
+
+.resume-cta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+
+  padding: 4px 10px;
+
+  border-radius: var(--radius-full);
+
+  background: var(--warning-soft);
+  color: var(--warning);
+  box-shadow: inset 0 0 0 1px var(--warning-border);
+
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.resume-cta-name {
+  flex: 1;
+  min-width: 0;
+
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.resume-cta-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+
+  color: var(--primary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* =========================================================
+   Dashboard — Continue list
+========================================================= */
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+
+  margin-bottom: 14px;
+}
+
+.section-head h2 {
+  font-size: var(--text-xl);
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+
+.section-link {
+  color: var(--primary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.section-link:hover {
+  color: var(--primary-hover);
+  text-decoration: underline;
+}
+
+.continue-list {
+  border-top: 1px solid var(--divider);
+}
+
+.continue-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+
+  padding: 15px 6px;
+
+  border-bottom: 1px solid var(--divider);
+
+  color: var(--text);
+  text-decoration: none;
+
+  transition: background var(--transition), padding var(--transition);
+}
+
+.continue-progress {
+  position: absolute;
+  bottom: -1px;
+  inset-inline: 0;
+
+  height: 2px;
+
+  background: transparent;
+  overflow: hidden;
+}
+
+.continue-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--primary), var(--warm));
+}
+
+.continue-row:hover {
+  background: var(--surface-soft);
+}
+
+.continue-kind {
+  width: 30px;
+  height: 30px;
+
+  flex-shrink: 0;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: var(--radius-md);
+
+  background: var(--surface-soft);
+  color: var(--muted);
+
+  font-size: 14px;
+
+  box-shadow: inset 0 0 0 1px var(--divider);
+}
+
+.continue-kind.is-exam {
+  background: var(--primary-soft);
+  color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary-border);
+}
+
+.continue-name {
+  flex: 1;
+  min-width: 0;
+
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.continue-meta {
+  flex-shrink: 0;
+
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.continue-arrow {
+  flex-shrink: 0;
+
+  color: var(--muted);
+  font-size: var(--text-sm);
+
+  opacity: 0;
+  transform: translateX(4px);
+
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+html[dir="ltr"] .continue-arrow {
+  transform: translateX(-4px);
+}
+
+.continue-row:hover .continue-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* =========================================================
+   Dashboard — mini calendar panel
+========================================================= */
+
+.home-calendar {
+  margin-top: 40px;
+}
+
+.home-calendar .mini-calendar {
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+}
+
+@media (max-width: 600px) {
+  .today-count {
+    font-size: 48px;
+  }
+
+  .continue-meta {
+    display: none;
+  }
+}

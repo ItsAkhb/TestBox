@@ -1,0 +1,263 @@
+/* =========================================================
+   REDESIGN LAYER — Calendar + Activity (Phase 7)
+   Month grid with activity intensity, day report drill-down,
+   month summary, mini calendar. Jalali / Gregorian agnostic.
+   Composes on top of the pages.css calendar base.
+   ========================================================= */
+
+/* ---------- Month navigation ---------- */
+
+.calendar-nav-btn {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+
+  display: grid;
+  place-items: center;
+
+  padding: 0;
+}
+
+.calendar-today-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------- Day cells: activity intensity ----------
+   Base dot is an in-flow 5px success circle; intensity
+   scales it so busy days read heavier at a glance. */
+
+.calendar-day.intensity-2 .calendar-day-dot {
+  width: 6px;
+  height: 6px;
+  opacity: 0.8;
+}
+
+.calendar-day.intensity-3 .calendar-day-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.calendar-day.intensity-4 .calendar-day-dot {
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 0 3px var(--success-soft);
+}
+
+.calendar-day.selected .calendar-day-dot {
+  box-shadow: none;
+}
+
+/* ---------- No-activity strip ---------- */
+
+.calendar-no-activity {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+
+  border-style: dashed;
+  border-color: var(--border-hover);
+
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.calendar-no-activity svg {
+  flex-shrink: 0;
+}
+
+/* ---------- Day detail report ---------- */
+
+.day-detail-completed-note {
+  gap: 8px;
+  font-weight: 700;
+}
+
+.day-detail-completed-note svg {
+  flex-shrink: 0;
+}
+
+.day-detail-expand-icon {
+  display: inline-flex;
+  color: var(--muted);
+  transition: transform var(--transition);
+}
+
+.day-detail-expand-icon.open {
+  transform: rotate(180deg);
+}
+
+.day-detail-subject-body-wrap {
+  overflow: hidden;
+}
+
+.day-detail-folder-name,
+.day-detail-exam-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.day-detail-folder-name svg,
+.day-detail-exam-name svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.day-detail-completed-badge {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.day-detail-exam-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+
+  font-variant-numeric: tabular-nums;
+}
+
+.day-detail-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.day-detail-delta.correct {
+  color: var(--success);
+}
+
+.day-detail-delta.wrong {
+  color: var(--danger);
+}
+
+/* ---------- Month summary ---------- */
+
+.month-summary-stat-icon {
+  display: flex;
+  color: var(--primary);
+}
+
+.month-summary-stat {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.month-summary-stat-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.cal-breakdown-bar {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+
+  margin-bottom: 12px;
+
+  border-radius: var(--radius-full);
+  background: var(--divider);
+}
+
+.cal-breakdown-bar span {
+  height: 100%;
+  min-width: 0;
+}
+
+.cal-breakdown-correct { background: var(--success); }
+.cal-breakdown-wrong { background: var(--danger); }
+
+.month-summary-row strong {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Mini calendar ---------- */
+
+.mini-calendar-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.mini-calendar-cell.has-activity::after {
+  inset-inline: 0;
+  width: 4px;
+  height: 4px;
+  margin-inline: auto;
+  opacity: 0.45;
+}
+
+.mini-calendar-cell.intensity-2.has-activity::after { opacity: 0.65; }
+.mini-calendar-cell.intensity-3.has-activity::after { opacity: 0.85; }
+.mini-calendar-cell.intensity-4.has-activity::after {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+.mini-calendar-cell.today.has-activity::after {
+  background: #fff;
+  opacity: 0.9;
+  box-shadow: none;
+}
+
+/* ---------- Page header month total ---------- */
+
+.cal-head-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 10px 16px;
+
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-xs);
+}
+
+.cal-head-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cal-head-stat strong {
+  color: var(--primary);
+  font-size: var(--text-xl);
+  font-weight: 800;
+}
+
+@media (max-width: 600px) {
+  .cal-head-meta {
+    display: none;
+  }
+}
+
+/* ---------- Calendar responsive ---------- */
+
+@media (max-width: 700px) {
+  .calendar-nav-btn {
+    width: 44px;
+    height: 44px;
+  }
+}

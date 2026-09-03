@@ -1,458 +1,54 @@
-import {
-  Link,
-  useLocation,
-} from "react-router-dom";
+import { useEffect } from "react";
+import { Outlet, useLocation } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import Sidebar from "./layout/Sidebar";
+import TopBar from "./layout/TopBar";
+import MobileNav from "./layout/MobileNav";
+import { initAndroidBackButton } from "../services/native";
 
-import {
-  useEffect,
-  useState,
-} from "react";
-
-import { useAuth } from "../context/AuthContext";
-import { useSync } from "../context/SyncContext";
-
-
-function Layout({ children }) {
-
-  const location =
-    useLocation();
-
-
-  const { user } =
-    useAuth();
-
-
-  const {
-    syncStatus,
-  } = useSync();
-
-
-
-  const [darkMode, setDarkMode] =
-    useState(() => {
-
-      return (
-        localStorage.getItem(
-          "testbox-theme"
-        ) === "dark"
-      );
-
-    });
-
-
+function Layout() {
+  const location = useLocation();
 
   useEffect(() => {
+    const saved = localStorage.getItem("testbox-theme") || "light";
+    document.documentElement.setAttribute("data-theme", saved);
+  }, []);
 
-    document.documentElement.setAttribute(
-      "data-theme",
-      darkMode
-        ? "dark"
-        : "light"
-    );
+  useEffect(() => {
+    initAndroidBackButton(null, location.pathname);
+  }, []);
 
-
-    localStorage.setItem(
-      "testbox-theme",
-      darkMode
-        ? "dark"
-        : "light"
-    );
-
-
-  }, [
-    darkMode,
-  ]);
-
-
-
-  const isActive = (path) =>
-    location.pathname === path;
-
-
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    const stage = document.querySelector(".page-stage");
+    if (stage) stage.scrollTop = 0;
+  }, [location.pathname]);
 
   return (
-
-    <div className="app">
-
-
-      <aside className="sidebar">
-
-
-        <div className="logo">
-
-          <span className="logo-icon">
-            ✓
-          </span>
-
-          <span>
-            TestBox
-          </span>
-
-        </div>
-
-
-
-
-        <nav className="navigation">
-
-
-          <Link
-            to="/"
-            className={`nav-item ${
-              isActive("/")
-                ? "active"
-                : ""
-            }`}
-          >
-
-            <span>
-              ⌂
-            </span>
-
-            <span>
-              خانه
-            </span>
-
-          </Link>
-
-
-
-
-
-          <Link
-            to="/folders"
-            className={`nav-item ${
-              isActive("/folders")
-                ? "active"
-                : ""
-            }`}
-          >
-
-            <span>
-              ▣
-            </span>
-
-            <span>
-              فولدرها
-            </span>
-
-          </Link>
-
-
-
-
-
-          <Link
-            to="/marked"
-            className={`nav-item ${
-              isActive("/marked")
-                ? "active"
-                : ""
-            }`}
-          >
-
-            <span>
-              ★
-            </span>
-
-            <span>
-              مارک‌شده‌ها
-            </span>
-
-          </Link>
-
-
-
-        </nav>
-
-
-
-
-
-        <div className="sidebar-bottom">
-
-
-
-          <Link
-            to={
-              user
-                ? "/account"
-                : "/login"
-            }
-            className={`nav-item ${
-              isActive(
-                user
-                  ? "/account"
-                  : "/login"
-              )
-                ? "active"
-                : ""
-            }`}
-          >
-
-            <span>
-              {
-                user
-                  ? "●"
-                  : "♙"
-              }
-            </span>
-
-
-            <span>
-              {
-                user
-                  ? "حساب کاربری"
-                  : "ورود"
-              }
-            </span>
-
-
-          </Link>
-
-
-
-
-
-          <Link
-            to="/settings"
-            className={`nav-item ${
-              isActive("/settings")
-                ? "active"
-                : ""
-            }`}
-          >
-
-            <span>
-              ⚙
-            </span>
-
-            <span>
-              تنظیمات
-            </span>
-
-
-          </Link>
-
-
-
-        </div>
-
-
-      </aside>
-
-
-
-
-
-
-      <main className="main-content">
-
-
-        <header className="topbar">
-
-
-          <div className="sync-status">
-
-
-            {
-              syncStatus === "syncing" && (
-                <span>
-                  🔄 در حال همگام‌سازی
-                </span>
-              )
-            }
-
-
-
-            {
-              syncStatus === "synced" && (
-                <span>
-                  ✓ ذخیره شد
-                </span>
-              )
-            }
-
-
-
-            {
-              syncStatus === "error" && (
-                <span>
-                  ⚠ خطا در همگام‌سازی
-                </span>
-              )
-            }
-
-
-
-          </div>
-
-
-
-
-
-          <button
-            className="theme-button"
-            onClick={() =>
-              setDarkMode(
-                (current) =>
-                  !current
-              )
-            }
-            title="تغییر حالت"
-          >
-
-            {
-              darkMode
-                ? "☀"
-                : "☾"
-            }
-
-
-          </button>
-
-
-
-        </header>
-
-
-
-
-
-        {children}
-
-
-
-
-
-      </main>
-
-
-
-
-
-
-      <nav className="mobile-navigation">
-
-
-
-        <Link
-          to="/"
-          className={`mobile-nav-item ${
-            isActive("/")
-              ? "active"
-              : ""
-          }`}
-        >
-
-          <span>
-            ⌂
-          </span>
-
-          <span>
-            خانه
-          </span>
-
-        </Link>
-
-
-
-
-
-        <Link
-          to="/folders"
-          className={`mobile-nav-item ${
-            isActive("/folders")
-              ? "active"
-              : ""
-          }`}
-        >
-
-          <span>
-            ▣
-          </span>
-
-          <span>
-            فولدرها
-          </span>
-
-        </Link>
-
-
-
-
-
-        <Link
-          to="/marked"
-          className={`mobile-nav-item ${
-            isActive("/marked")
-              ? "active"
-              : ""
-          }`}
-        >
-
-          <span>
-            ★
-          </span>
-
-          <span>
-            مارک‌شده
-          </span>
-
-        </Link>
-
-
-
-
-
-        <Link
-          to={
-            user
-              ? "/account"
-              : "/login"
-          }
-          className={`mobile-nav-item ${
-            isActive(
-              user
-                ? "/account"
-                : "/login"
-            )
-              ? "active"
-              : ""
-          }`}
-        >
-
-          <span>
-            {
-              user
-                ? "●"
-                : "♙"
-            }
-          </span>
-
-
-          <span>
-            {
-              user
-                ? "حساب"
-                : "ورود"
-            }
-          </span>
-
-
-        </Link>
-
-
-
-      </nav>
-
-
-
+    <div className="app-shell">
+      <Sidebar />
+
+      <div className="app-main">
+        <TopBar />
+
+        <main className="page-stage">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      </div>
+
+      <MobileNav />
     </div>
-
   );
-
 }
-
 
 export default Layout;

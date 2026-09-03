@@ -8,9 +8,15 @@ import {
   syncLocalToCloud,
   syncCloudToLocal,
 } from "../services/cloudSync";
+import { useTranslation } from "../i18n";
+import { useToast } from "../context/ToastContext";
+import Icon from "../components/ui/Icon";
+import PageHeader from "../components/ui/PageHeader";
 
 function Account() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
+  const { showToast } = useToast();
 
   const { user } = useAuth();
 
@@ -20,12 +26,8 @@ function Account() {
   const [syncLoading, setSyncLoading] =
     useState(false);
 
-  const [message, setMessage] =
-    useState("");
-
   async function handleLogout() {
     setLoading(true);
-    setMessage("");
 
     const { error } =
       await supabase.auth.signOut();
@@ -36,8 +38,9 @@ function Account() {
         error
       );
 
-      setMessage(
-        "خروج از حساب انجام نشد."
+      showToast(
+        t("account.logout.failed"),
+        "error"
       );
 
       setLoading(false);
@@ -51,15 +54,15 @@ function Account() {
 
   async function handleLocalToCloud() {
     if (!user) {
-      setMessage(
-        "ابتدا وارد حساب شوید."
+      showToast(
+        t("account.loginRequired"),
+        "error"
       );
 
       return;
     }
 
     setSyncLoading(true);
-    setMessage("");
 
     try {
       const result =
@@ -67,8 +70,9 @@ function Account() {
           user.id
         );
 
-      setMessage(
-        `${result.folders} فولدر و ${result.exams} آزمون با موفقیت به Cloud ارسال شد ✓`
+      showToast(
+        `${result.folders} ${t("common.folders")} و ${result.exams} ${t("common.tests")} ${t("account.sync.success")}`,
+        "success"
       );
     } catch (error) {
       console.error(
@@ -76,9 +80,10 @@ function Account() {
         error
       );
 
-      setMessage(
+      showToast(
         error?.message ||
-          "همگام‌سازی به Cloud انجام نشد."
+          t("account.sync.failed"),
+        "error"
       );
     } finally {
       setSyncLoading(false);
@@ -87,8 +92,9 @@ function Account() {
 
   async function handleCloudToLocal() {
     if (!user) {
-      setMessage(
-        "ابتدا وارد حساب شوید."
+      showToast(
+        t("account.loginRequired"),
+        "error"
       );
 
       return;
@@ -96,7 +102,7 @@ function Account() {
 
     const confirmed =
       window.confirm(
-        "اطلاعات فعلی Local با اطلاعات Cloud جایگزین می‌شود. ادامه می‌دهی؟"
+        t("account.cloudToLocal.confirm")
       );
 
     if (!confirmed) {
@@ -104,7 +110,6 @@ function Account() {
     }
 
     setSyncLoading(true);
-    setMessage("");
 
     try {
       const result =
@@ -112,8 +117,9 @@ function Account() {
           user.id
         );
 
-      setMessage(
-        `${result.folders} فولدر و ${result.exams} آزمون از Cloud بازیابی شد ✓`
+      showToast(
+        `${result.folders} ${t("common.folders")} و ${result.exams} ${t("common.tests")} ${t("account.cloudToLocal.success")}`,
+        "success"
       );
 
       setTimeout(() => {
@@ -126,9 +132,10 @@ function Account() {
         error
       );
 
-      setMessage(
+      showToast(
         error?.message ||
-          "دریافت اطلاعات از Cloud انجام نشد."
+          t("account.cloudToLocal.failed"),
+        "error"
       );
     } finally {
       setSyncLoading(false);
@@ -138,45 +145,30 @@ function Account() {
   return (
     <section className="page-section">
 
-      <div className="page-title">
-
-        <div>
-          <h1>
-            حساب کاربری
-          </h1>
-
-          <p>
-            مدیریت حساب و اتصال TestBox
-          </p>
-        </div>
-
-      </div>
+      <PageHeader
+        icon="user"
+        title={t("account.title")}
+        subtitle={t("account.subtitle")}
+      />
 
 
       <div
-        className="settings-section"
-        style={{
-          maxWidth: "650px",
-        }}
+        className="settings-section account-card"
       >
 
         <h2>
-          حساب فعلی
+          {t("account.current")}
         </h2>
 
-        <p>
+        <p className="account-email">
+          <Icon name="user" size={15} />
           {user?.email ||
-            "کاربر ناشناس"}
+            t("account.anonymous")}
         </p>
 
 
         <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "8px",
-            marginTop: "18px",
-          }}
+          className="account-actions"
         >
 
           <button
@@ -190,9 +182,10 @@ function Account() {
               loading
             }
           >
+            <Icon name="upload" size={15} />
             {syncLoading
-              ? "در حال همگام‌سازی..."
-              : "Local → Cloud"}
+              ? t("account.syncing")
+              : t("account.syncToLocal")}
           </button>
 
 
@@ -207,9 +200,10 @@ function Account() {
               loading
             }
           >
+            <Icon name="download" size={15} />
             {syncLoading
-              ? "در حال دریافت..."
-              : "Cloud → Local"}
+              ? t("account.receiving")
+              : t("account.syncToCloud")}
           </button>
 
 
@@ -224,27 +218,13 @@ function Account() {
               syncLoading
             }
           >
+            <Icon name="logout" size={15} />
             {loading
-              ? "در حال خروج..."
-              : "خروج از حساب"}
+              ? t("account.loggingOut")
+              : t("account.logout")}
           </button>
 
         </div>
-
-
-        {message && (
-          <p
-            style={{
-              marginTop: "14px",
-              color:
-                message.includes("✓")
-                  ? "var(--success)"
-                  : "var(--danger)",
-            }}
-          >
-            {message}
-          </p>
-        )}
 
       </div>
 

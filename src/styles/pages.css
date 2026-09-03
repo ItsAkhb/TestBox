@@ -1,0 +1,2997 @@
+/* =========================================================
+   Page Headers (Home uses .home-heading; other pages use
+   the shared PageHeader → .page-head in primitives.css)
+   ========================================================= */
+
+.home-heading {
+  margin-bottom: 28px;
+}
+
+.home-heading h1 {
+  margin: 0 0 6px;
+
+  color: var(--text);
+
+  font-size: 30px;
+  line-height: 1.25;
+  font-weight: 750;
+
+  letter-spacing: -0.4px;
+}
+
+.home-heading p {
+  margin: 0;
+
+  color: var(--muted);
+
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+
+/* =========================================================
+   Exam Grid
+========================================================= */
+
+.exam-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+
+  gap: 12px;
+}
+
+.home-exam-card {
+  min-width: 0;
+
+  display: flex;
+  align-items: center;
+
+  gap: 13px;
+
+  padding: 15px;
+
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+
+  color: var(--text);
+  text-decoration: none;
+
+  box-shadow: var(--shadow-sm);
+
+  transition:
+    border-color var(--transition),
+    box-shadow var(--transition),
+    transform var(--transition);
+}
+
+.home-exam-card:hover {
+  border-color: var(--border-hover);
+
+  box-shadow: var(--shadow-md);
+
+  transform: translateY(-1px);
+}
+
+.home-exam-card > span {
+  font-size: 23px;
+}
+
+.home-exam-card strong {
+  display: block;
+
+  margin-bottom: 4px;
+
+  color: var(--text);
+
+  font-size: 14px;
+}
+
+.home-exam-card p {
+  margin: 0;
+
+  color: var(--muted);
+
+  font-size: 12px;
+}
+
+
+/* =========================================================
+   Folder Cards
+========================================================= */
+
+.folder-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+
+  gap: 13px;
+}
+
+.folder-card {
+  position: relative;
+
+  min-height: 88px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 13px;
+
+  padding: 15px 16px;
+
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+
+  color: var(--text);
+  text-decoration: none;
+
+  box-shadow: var(--shadow-sm);
+
+  transition:
+    border-color var(--transition),
+    box-shadow var(--transition),
+    transform var(--transition);
+}
+
+.folder-card:hover {
+  border-color: var(--border-hover);
+
+  box-shadow: var(--shadow-md);
+
+  transform: translateY(-1px);
+}
+
+
+/* =========================================================
+   Folder Main
+========================================================= */
+
+.folder-main {
+  min-width: 0;
+  flex: 1;
+
+  display: flex;
+  align-items: center;
+
+  gap: 13px;
+
+  color: var(--text);
+  text-decoration: none !important;
+}
+
+.folder-main:visited,
+.folder-main:hover,
+.folder-main:active,
+.folder-main:focus {
+  color: var(--text);
+  text-decoration: none !important;
+}
+
+.folder-main * {
+  text-decoration: none !important;
+}
+
+
+/* =========================================================
+   Folder Icon
+========================================================= */
+
+.folder-icon {
+  width: 44px;
+  height: 44px;
+
+  flex-shrink: 0;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 11px;
+
+  background: var(--primary-soft);
+  color: var(--primary);
+
+  font-size: 21px;
+}
+
+
+/* =========================================================
+   Folder Information
+========================================================= */
+
+.folder-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.folder-info h3 {
+  margin: 0 0 4px;
+
+  overflow: hidden;
+
+  white-space: nowrap;
+  text-overflow: ellipsis;
+
+  color: var(--text);
+
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.folder-info p {
+  margin: 0;
+
+  color: var(--muted);
+
+  font-size: 12px;
+}
+
+
+/* =========================================================
+   Folder / Exam Management
+========================================================= */
+
+.folder-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+
+  gap: 20px;
+
+  margin-bottom: 25px;
+}
+
+.folder-heading-row {
+  display: flex;
+  align-items: center;
+
+  gap: 10px;
+
+  margin-top: 10px;
+}
+
+.folder-heading-icon {
+  width: 38px;
+  height: 38px;
+
+  flex-shrink: 0;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 10px;
+
+  background: var(--primary-soft);
+  color: var(--primary);
+
+  font-size: 20px;
+}
+
+.folder-heading-row h1 {
+  margin: 0 0 4px;
+
+  color: var(--text);
+
+  font-size: 26px;
+  font-weight: 750;
+}
+
+.folder-heading-row p {
+  margin: 0;
+
+  color: var(--muted);
+
+  font-size: 13px;
+}
+
+.folder-page-header h1 {
+  margin: 10px 0 4px;
+
+  color: var(--text);
+
+  font-size: 26px;
+}
+
+.folder-page-header p {
+  margin: 0;
+
+  color: var(--muted);
+
+  font-size: 13px;
+}
+
+
+/* =========================================================
+   Exam / Answer Sheet
+========================================================= */
+
+.exam-page-content {
+  width: 100%;
+  max-width: 1050px;
+
+  margin: 0 auto;
+}
+
+.exam-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+
+  gap: 20px;
+
+  margin:
+    0 auto 20px;
+}
+
+.exam-header-info {
+  min-width: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+
+  gap: 10px;
+}
+
+.exam-header-info h1 {
+  margin:
+    2px 0 4px;
+
+  overflow: hidden;
+
+  text-overflow:
+    ellipsis;
+
+  white-space:
+    nowrap;
+
+  color:
+    var(--text);
+
+  font-size: 26px;
+  font-weight: 750;
+
+  letter-spacing:
+    -0.3px;
+}
+
+.exam-header p {
+  margin: 0;
+
+  color:
+    var(--muted);
+
+  font-size: 13px;
+}
+
+.exam-header-info .back-link {
+  display: inline-flex;
+  align-items: center;
+
+  gap: 5px;
+}
+
+.exam-header-actions {
+  display: flex;
+  align-items: center;
+
+  gap: 8px;
+}
+
+.marked-counter,
+.marked-total {
+  flex-shrink: 0;
+
+  display: flex;
+  align-items: center;
+
+  gap: 6px;
+
+  padding:
+    8px 11px;
+
+  background:
+    var(--surface);
+
+  border:
+    1px solid var(--border);
+
+  border-radius:
+    var(--radius-md);
+
+  color:
+    var(--text);
+
+  direction:
+    rtl;
+
+  white-space:
+    nowrap;
+}
+
+.marked-counter strong,
+.marked-total strong {
+  font-size: 14px;
+}
+
+.marked-counter span:last-child,
+.marked-total span {
+  color:
+    var(--muted);
+
+  font-size: 12px;
+}
+
+
+/* =========================================================
+   Answer Sheet
+========================================================= */
+
+.answer-sheet {
+  width: 100%;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 4px;
+
+  margin: 0 auto;
+
+  direction:
+    ltr;
+}
+
+.question-row {
+  min-height: 52px;
+
+  display: flex;
+  align-items: center;
+
+  padding:
+    6px 8px;
+
+  background:
+    var(--surface);
+
+  border:
+    1px solid var(--border);
+
+  border-radius:
+    var(--radius-md);
+
+  direction:
+    ltr;
+
+  transition:
+    border-color var(--transition),
+    background var(--transition),
+    box-shadow var(--transition);
+}
+
+.question-row:hover {
+  border-color:
+    var(--border-hover);
+}
+
+.question-number {
+  width: 54px;
+
+  flex-shrink: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  gap: 1px;
+
+  text-align: center;
+
+  color:
+    var(--text);
+
+  user-select: none;
+}
+
+.question-index {
+  color:
+    var(--muted);
+
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 500;
+}
+
+.question-number-main {
+  color:
+    var(--text);
+
+  font-size: 14px;
+  line-height: 1.1;
+  font-weight: 700;
+}
+
+.question-content {
+  min-width: 0;
+  flex: 1;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 5px;
+}
+
+.answer-row,
+.correct-answer-row {
+  display: flex;
+  align-items: center;
+
+  gap: 8px;
+}
+
+.answer-label,
+.correct-answer-label {
+  flex-shrink: 0;
+
+  width: 58px;
+
+  color:
+    var(--muted);
+
+  font-size: 9px;
+  line-height: 1;
+}
+
+.correct-answer-label {
+  color:
+    var(--success);
+}
+
+.answer-options {
+  flex: 1;
+
+  display: flex;
+
+  gap: 6px;
+}
+
+.answer-choice,
+.answer-button {
+  width: 36px;
+  height: 36px;
+
+  border:
+    1px solid var(--border);
+
+  border-radius:
+    9px;
+
+  background:
+    transparent;
+
+  color:
+    var(--text);
+
+  cursor:
+    pointer;
+
+  font-weight:
+    600;
+
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.answer-choice:hover,
+.answer-button:hover {
+  border-color:
+    var(--primary);
+
+  transform:
+    translateY(-1px);
+}
+
+.answer-choice:active,
+.answer-button:active {
+  transform:
+    scale(0.95);
+}
+
+.answer-choice.selected,
+.answer-button.selected {
+  background:
+    var(--primary);
+
+  border-color:
+    var(--primary);
+
+  color:
+    #fff;
+
+  box-shadow:
+    0 3px 10px
+    rgb(37 99 235 / 18%);
+}
+
+.answer-choice.answer-correct {
+  background:
+    var(--success);
+
+  border-color:
+    var(--success);
+
+  color:
+    #fff;
+
+  box-shadow:
+    0 3px 10px
+    rgb(22 163 74 / 18%);
+}
+
+.answer-choice.answer-wrong {
+  background:
+    var(--danger);
+
+  border-color:
+    var(--danger);
+
+  color:
+    #fff;
+
+  box-shadow:
+    0 3px 10px
+    rgb(220 38 38 / 18%);
+}
+
+.correct-answer-options {
+  display: flex;
+  align-items: center;
+
+  gap: 4px;
+}
+
+.correct-answer-choice {
+  width: 25px;
+  height: 25px;
+
+  display: grid;
+  place-items: center;
+
+  padding: 0;
+
+  border:
+    1px solid var(--border);
+
+  border-radius:
+    7px;
+
+  background:
+    transparent;
+
+  color:
+    var(--muted);
+
+  cursor:
+    pointer;
+
+  font-size: 10px;
+  font-weight: 600;
+
+  transition:
+    border-color var(--transition),
+    background var(--transition),
+    color var(--transition),
+    transform var(--transition),
+    opacity var(--transition);
+}
+
+.correct-answer-choice:hover:not(:disabled) {
+  border-color:
+    var(--success);
+
+  color:
+    var(--success);
+
+  transform:
+    translateY(-1px);
+}
+
+.correct-answer-choice:active:not(:disabled) {
+  transform:
+    scale(0.95);
+}
+
+.correct-answer-choice.selected {
+  background:
+    var(--success-soft);
+
+  border-color:
+    var(--success-border);
+
+  color:
+    var(--success);
+}
+
+.correct-answer-choice:disabled {
+  opacity:
+    0.55;
+
+  cursor:
+    not-allowed;
+}
+
+.correct-answer-choice.selected:disabled {
+  opacity:
+    1;
+}
+
+.question-result-actions {
+  display: flex;
+  align-items: center;
+
+  gap: 6px;
+}
+
+.result-button {
+  width: 34px;
+  height: 34px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border:
+    1px solid var(--border);
+
+  border-radius:
+    9px;
+
+  background:
+    var(--surface);
+
+  color:
+    var(--muted);
+
+  cursor:
+    pointer;
+
+  font-size:
+    1rem;
+
+  font-weight:
+    700;
+
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease,
+    opacity var(--transition);
+}
+
+.result-button:hover:not(:disabled) {
+  transform:
+    translateY(-1px);
+}
+
+.result-button:active:not(:disabled) {
+  transform:
+    scale(0.95);
+}
+
+.result-button:disabled {
+  opacity:
+    0.4;
+
+  cursor:
+    not-allowed;
+
+  transform:
+    none;
+}
+
+.result-correct.selected {
+  color:
+    var(--success);
+
+  border-color:
+    var(--success-border);
+
+  background:
+    var(--success-soft);
+}
+
+.result-wrong.selected {
+  color:
+    var(--danger);
+
+  border-color:
+    var(--danger-border);
+
+  background:
+    var(--danger-soft);
+}
+
+.mark-button {
+  width: 38px;
+  height: 38px;
+
+  flex-shrink: 0;
+
+  border: 0;
+  border-radius: 8px;
+
+  background:
+    transparent;
+
+  color:
+    var(--warning);
+
+  cursor:
+    pointer;
+
+  font-size:
+    17px;
+
+  opacity:
+    0.3;
+
+  transition:
+    opacity var(--transition),
+    background var(--transition),
+    transform 0.15s ease;
+}
+
+.mark-button:hover {
+  background:
+    var(--background);
+
+  opacity:
+    0.85;
+
+  transform:
+    scale(1.06);
+}
+
+.mark-button:active {
+  transform:
+    scale(0.93);
+}
+
+.mark-button.marked {
+  opacity:
+    1;
+}
+
+.question-marked {
+  background:
+    color-mix(
+      in srgb,
+      var(--warning-soft) 70%,
+      var(--surface)
+    );
+
+  border-color:
+    var(--warning-border);
+}
+
+.question-focused {
+  position: relative;
+
+  z-index:
+    2;
+
+  animation:
+    questionFocus
+    1.8s ease;
+}
+
+@keyframes questionFocus {
+  0% {
+    transform:
+      scale(1.012);
+
+    border-color:
+      var(--primary);
+
+    box-shadow:
+      0 0 0 4px
+      rgb(37 99 235 / 13%),
+      0 7px 22px
+      rgb(37 99 235 / 9%);
+  }
+
+  60% {
+    transform:
+      scale(1.006);
+
+    border-color:
+      var(--primary);
+
+    box-shadow:
+      0 0 0 3px
+      rgb(37 99 235 / 8%);
+  }
+
+  100% {
+    transform:
+      scale(1);
+
+    border-color:
+      var(--border);
+
+    box-shadow:
+      none;
+  }
+}
+
+
+/* =========================================================
+   Exam Pagination
+========================================================= */
+
+.exam-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 12px;
+
+  margin:
+    18px auto 0;
+
+  direction:
+    rtl;
+}
+
+.exam-pagination span {
+  color:
+    var(--muted);
+
+  font-size:
+    12px;
+}
+
+.exam-pagination button:disabled {
+  opacity:
+    0.45;
+
+  cursor:
+    not-allowed;
+
+  transform:
+    none;
+
+  box-shadow:
+    none;
+}
+
+
+/* =========================================================
+   Exam Note
+========================================================= */
+
+.exam-note,
+.note-section {
+  width: 100%;
+  max-width: 1050px;
+
+  margin:
+    20px auto 45px;
+
+  padding:
+    17px;
+
+  background:
+    var(--surface);
+
+  border:
+    1px solid var(--border);
+
+  border-radius:
+    var(--radius-lg);
+
+  direction:
+    rtl;
+
+  scroll-margin-top:
+    20px;
+}
+
+.note-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+
+  gap:
+    15px;
+
+  margin-bottom:
+    10px;
+}
+
+.note-header h2,
+.note-section h2 {
+  margin:
+    0;
+
+  color:
+    var(--text);
+
+  font-size:
+    16px;
+}
+
+.note-header span {
+  color:
+    var(--muted);
+
+  font-size:
+    12px;
+}
+
+.exam-note textarea,
+.note-section textarea {
+  width:
+    100%;
+
+  min-height:
+    125px;
+
+  padding:
+    11px 12px;
+
+  resize:
+    vertical;
+
+  border:
+    1px solid var(--border);
+
+  border-radius:
+    var(--radius-md);
+
+  outline:
+    none;
+
+  background:
+    var(--background);
+
+  color:
+    var(--text);
+
+  direction:
+    rtl;
+
+  font:
+    inherit;
+
+  font-size:
+    13px;
+
+  line-height:
+    1.8;
+
+  transition:
+    border-color var(--transition);
+}
+
+.exam-note textarea:focus,
+.note-section textarea:focus {
+  border-color:
+    var(--primary);
+}
+
+
+/* =========================================================
+   Exam Settings — Negative Marking
+========================================================= */
+
+.exam-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 20px;
+
+  margin-top:
+    20px;
+
+  padding:
+    16px;
+
+  border:
+    1px solid var(--border);
+
+  border-radius:
+    14px;
+
+  background:
+    var(--surface);
+}
+
+.exam-setting-info {
+  display: flex;
+  flex-direction: column;
+
+  gap:
+    5px;
+}
+
+.exam-setting-info strong {
+  color:
+    var(--text);
+
+  font-size:
+    15px;
+}
+
+.exam-setting-info span {
+  color:
+    var(--muted);
+
+  font-size:
+    13px;
+
+  line-height:
+    1.6;
+}
+
+
+/* =========================================================
+   Exam Results
+========================================================= */
+
+.exam-results-summary {
+  display: flex;
+  align-items: center;
+
+  gap:
+    20px;
+
+  padding:
+    12px 16px;
+
+  border:
+    1px solid var(--border);
+
+  border-radius:
+    16px;
+
+  background:
+    var(--surface);
+}
+
+.exam-percentage {
+  min-width:
+    72px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.exam-percentage strong {
+  color:
+    var(--text);
+
+  font-size:
+    1.45rem;
+
+  line-height:
+    1;
+}
+
+.exam-percentage span {
+  margin-top:
+    5px;
+
+  color:
+    var(--muted);
+
+  font-size:
+    0.75rem;
+}
+
+.exam-percentage small {
+  margin-top:
+    5px;
+
+  color:
+    var(--muted);
+
+  font-size:
+    0.7rem;
+}
+
+.exam-stat {
+  min-width:
+    42px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.exam-stat strong {
+  color:
+    var(--text);
+
+  font-size:
+    1rem;
+
+  line-height:
+    1;
+}
+
+.exam-stat span {
+  margin-top:
+    5px;
+
+  color:
+    var(--muted);
+
+  font-size:
+    0.72rem;
+}
+
+.exam-stat.correct strong {
+  color:
+    var(--success);
+}
+
+.exam-stat.wrong strong {
+  color:
+    var(--danger);
+}
+
+.exam-stat.unanswered strong {
+  color:
+    var(--muted);
+}
+
+
+/* =========================================================
+   Marked (header now uses shared PageHeader → .page-head)
+   ========================================================= */
+
+.marked-page {
+  width:
+    100%;
+
+  max-width:
+    1100px;
+
+  margin:
+    0 auto;
+}
+
+.marked-groups {
+  display:
+    flex;
+
+  flex-direction:
+    column;
+
+  gap:
+    12px;
+}
+
+.marked-group {
+  overflow:
+    hidden;
+
+  background:
+    var(--surface);
+
+  border:
+    1px solid var(--border);
+
+  border-radius:
+    var(--radius-lg);
+
+  box-shadow:
+    var(--shadow-sm);
+
+  transition:
+    border-color var(--transition),
+    box-shadow var(--transition);
+}
+
+.marked-group:hover {
+  border-color:
+    var(--border-hover);
+
+  box-shadow:
+    var(--shadow-md);
+}
+
+.marked-group-header {
+  min-height:
+    64px;
+
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  justify-content:
+    space-between;
+
+  gap:
+    15px;
+
+  padding:
+    13px 16px;
+
+  direction:
+    rtl;
+
+  border-bottom:
+    1px solid var(--border);
+}
+
+.marked-group-info {
+  min-width:
+    0;
+}
+
+.marked-folder {
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  gap:
+    5px;
+
+  margin-bottom:
+    4px;
+
+  color:
+    var(--muted);
+
+  font-size:
+    12px;
+}
+
+.marked-group-info h3,
+.marked-group-header h3 {
+  margin:
+    0;
+
+  overflow:
+    hidden;
+
+  text-overflow:
+    ellipsis;
+
+  white-space:
+    nowrap;
+
+  color:
+    var(--text);
+
+  font-size:
+    15px;
+}
+
+.marked-count {
+  display:
+    flex;
+
+  align-items:
+    baseline;
+
+  gap:
+    5px;
+
+  padding:
+    6px 9px;
+
+  border-radius:
+    8px;
+
+  background:
+    var(--background);
+
+  white-space:
+    nowrap;
+}
+
+.marked-count strong {
+  color:
+    var(--text);
+
+  font-size:
+    13px;
+}
+
+.marked-count span {
+  color:
+    var(--muted);
+
+  font-size:
+    11px;
+}
+
+.marked-question-list {
+  display:
+    flex;
+
+  flex-wrap:
+    wrap;
+
+  gap:
+    7px;
+
+  padding:
+    12px 16px;
+
+  direction:
+    ltr;
+}
+
+.marked-question {
+  min-width:
+    70px;
+
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  gap:
+    6px;
+
+  padding:
+    8px 10px;
+
+  background:
+    var(--background);
+
+  border:
+    1px solid var(--border);
+
+  border-radius:
+    8px;
+
+  color:
+    var(--text);
+
+  text-decoration:
+    none;
+
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.marked-question:hover {
+  transform:
+    translateY(-1px);
+
+  border-color:
+    var(--primary);
+
+  background:
+    var(--surface);
+
+  box-shadow:
+    0 4px 12px
+    rgb(37 99 235 / 8%);
+}
+
+.marked-question-star {
+  color:
+    var(--warning);
+
+  font-size:
+    13px;
+}
+
+.marked-question-number {
+  flex:
+    1;
+
+  color:
+    var(--text);
+
+  text-align:
+    center;
+
+  font-weight:
+    700;
+}
+
+.marked-question-arrow {
+  color:
+    var(--muted);
+
+  font-size:
+    12px;
+
+  transition:
+    transform var(--transition);
+}
+
+.marked-question:hover
+.marked-question-arrow {
+  color:
+    var(--primary);
+
+  transform:
+    translateX(-2px);
+}
+
+
+/* =========================================================
+   Home — Folder / Page Links
+========================================================= */
+
+.home-heading a,
+.section-header a,
+.recent-section a {
+  text-decoration:
+    none !important;
+}
+
+.home-heading a:visited,
+.section-header a:visited,
+.recent-section a:visited {
+  text-decoration:
+    none !important;
+}
+
+.home-heading a:hover,
+.section-header a:hover,
+.recent-section a:hover {
+  text-decoration:
+    none !important;
+}
+
+
+/* =========================================================
+   Responsive — Tablet / Small Desktop
+========================================================= */
+
+@media (max-width: 1100px) {
+  .folder-grid,
+  .exam-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* =========================================================
+   Responsive — Mobile
+========================================================= */
+
+@media (max-width: 768px) {
+  .home-heading h1 {
+    font-size:
+      26px;
+  }
+
+  .stats {
+    grid-template-columns:
+      1fr;
+
+    gap:
+      8px;
+
+    margin-bottom:
+      30px;
+  }
+
+  .section-header {
+    align-items:
+      flex-start;
+  }
+
+  .section-header
+  .primary-button {
+    display:
+      none;
+  }
+
+  .folder-grid,
+  .exam-grid {
+    grid-template-columns:
+      1fr;
+  }
+
+  .empty-state {
+    min-height:
+      220px;
+  }
+
+  .folder-page-header {
+    align-items:
+      stretch;
+
+    flex-direction:
+      column;
+  }
+
+  .folder-page-header
+  .primary-button {
+    width:
+      100%;
+  }
+
+  .exam-header {
+    align-items:
+      flex-start;
+  }
+
+  .exam-header-actions {
+    width:
+      100%;
+
+    display:
+      flex;
+
+    align-items:
+      center;
+
+    justify-content:
+      space-between;
+  }
+
+  .exam-note-button {
+    flex:
+      1;
+  }
+}
+
+
+/* =========================================================
+   Responsive — Result / Exam Header
+========================================================= */
+
+@media (max-width: 700px) {
+  .exam-header {
+    align-items:
+      stretch;
+
+    flex-direction:
+      column;
+  }
+
+  .exam-results-summary {
+    justify-content:
+      space-between;
+  }
+
+  .marked-counter {
+    align-self:
+      flex-start;
+  }
+}
+
+
+/* =========================================================
+   Responsive — Small Mobile
+========================================================= */
+
+@media (max-width: 600px) {
+  .home-heading {
+    margin-bottom:
+      22px;
+  }
+
+  .home-heading h1 {
+    font-size:
+      24px;
+  }
+
+  .section-header {
+    gap:
+      10px;
+  }
+
+  .folder-card {
+    min-height:
+      84px;
+
+    padding:
+      14px;
+  }
+
+  .folder-actions button {
+    opacity:
+      1;
+  }
+
+  .exam-list-main {
+    padding:
+      12px;
+  }
+
+  .exam-list-icon {
+    width:
+      38px;
+
+    height:
+      38px;
+  }
+
+  .exam-actions {
+    padding:
+      5px;
+  }
+
+  .exam-actions button {
+    width:
+      32px;
+
+    height:
+      32px;
+
+    opacity:
+      1;
+  }
+
+  .exam-header {
+    gap:
+      10px;
+  }
+
+  .exam-header-info h1 {
+    font-size:
+      21px;
+  }
+
+  .marked-counter {
+    padding:
+      7px 9px;
+  }
+
+  .marked-counter
+  span:last-child {
+    display:
+      none;
+  }
+
+  .answer-sheet {
+    gap:
+      3px;
+  }
+
+  .question-row {
+    min-height:
+      50px;
+
+    padding:
+      5px;
+  }
+
+  .question-number {
+    width:
+      40px;
+  }
+
+  .question-index {
+    font-size:
+      8px;
+  }
+
+  .question-number-main {
+    font-size:
+      13px;
+  }
+
+  .question-content {
+    gap:
+      4px;
+  }
+
+  .answer-row,
+  .correct-answer-row {
+    gap:
+      5px;
+  }
+
+  .answer-label,
+  .correct-answer-label {
+    width:
+      50px;
+
+    font-size:
+      8px;
+  }
+
+  .correct-answer-choice {
+    width:
+      23px;
+
+    height:
+      23px;
+
+    font-size:
+      9px;
+  }
+
+  .answer-options {
+    gap:
+      4px;
+  }
+
+  .answer-choice,
+  .answer-button {
+    width:
+      33px;
+
+    height:
+      33px;
+
+    font-size:
+      12px;
+  }
+
+  .mark-button {
+    width:
+      34px;
+
+    height:
+      34px;
+  }
+
+  .exam-note,
+  .note-section {
+    padding:
+      14px;
+
+    border-radius:
+      var(--radius-md);
+  }
+
+  .note-header {
+    align-items:
+      flex-start;
+
+    flex-direction:
+      column;
+
+    gap:
+      3px;
+  }
+
+  .marked-group-header {
+    min-height:
+      auto;
+
+    padding:
+      12px 13px;
+  }
+
+  .marked-question-list {
+    gap:
+      6px;
+
+    padding:
+      11px 13px;
+  }
+
+  .marked-question {
+    min-width:
+      62px;
+
+    padding:
+      7px 8px;
+  }
+
+  .settings-actions {
+    grid-template-columns:
+      1fr;
+  }
+
+  .settings-danger {
+    align-items:
+      stretch;
+
+    flex-direction:
+      column;
+  }
+
+  .danger-button {
+    width:
+      100%;
+  }
+
+  .number-inputs {
+    grid-template-columns:
+      1fr;
+  }
+
+  .search-box input {
+    height:
+      44px;
+
+    font-size:
+      12px;
+  }
+
+  .search-results {
+    max-height:
+      350px;
+  }
+
+  .exam-results-summary {
+    gap:
+      10px;
+
+    padding:
+      10px 12px;
+  }
+
+  .exam-percentage {
+    min-width:
+      60px;
+  }
+
+  .exam-percentage strong {
+    font-size:
+      1.25rem;
+  }
+
+  .exam-pagination {
+    gap:
+      8px;
+  }
+
+  .modal-overlay {
+    align-items: flex-start;
+    padding-top: 20px;
+  }
+
+  .modal {
+    max-height: calc(100dvh - 30px);
+  }
+}
+
+
+/* =========================================================
+   Responsive — Very Small Screens
+========================================================= */
+
+@media (max-width: 480px) {
+  .exam-results-summary {
+    gap:
+      8px;
+
+    padding:
+      9px 10px;
+  }
+
+  .exam-percentage {
+    min-width:
+      56px;
+  }
+
+  .exam-percentage strong {
+    font-size:
+      1.2rem;
+  }
+
+  .exam-stat {
+    min-width:
+      36px;
+  }
+
+  .exam-stat span {
+    font-size:
+      0.68rem;
+  }
+
+  .question-number {
+    width:
+      36px;
+  }
+
+  .question-index {
+    font-size:
+      7px;
+  }
+
+  .question-number-main {
+    font-size:
+      12px;
+  }
+
+  .question-content {
+    gap:
+      3px;
+  }
+
+  .answer-label,
+  .correct-answer-label {
+    width:
+      45px;
+
+    font-size:
+      7px;
+  }
+
+  .correct-answer-choice {
+    width:
+      21px;
+
+    height:
+      21px;
+
+    font-size:
+      8px;
+  }
+}
+
+
+/* =========================================================
+   Mobile Fix — Question Result Actions
+   ========================================================= */
+
+@media (max-width: 600px) {
+
+  .question-row {
+    flex-wrap: wrap;
+  }
+
+  .question-result-actions {
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 6px;
+  }
+
+}
+
+
+/* =========================================================
+   Very narrow screens — practice row recomposition.
+   Practice-only (exam + review rows keep their behavior).
+   The ✓/✕/★ controls dock in a slim trailing tower instead
+   of wrapping into a full-width row under the options, so the
+   card stays compact and scannable.
+   ========================================================= */
+
+@media (max-width: 480px) {
+
+  .question-row:not(.exam-mode-row):not(.is-review) {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+    grid-template-rows: auto auto;
+    column-gap: 8px;
+    row-gap: 6px;
+    align-items: center;
+  }
+
+  .question-row:not(.exam-mode-row):not(.is-review) .question-number {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    width: auto;
+  }
+
+  .question-row:not(.exam-mode-row):not(.is-review) .question-content {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    min-width: 0;
+  }
+
+  .question-row:not(.exam-mode-row):not(.is-review) .question-result-actions {
+    grid-column: 3;
+    grid-row: 1;
+
+    width: auto;
+    margin-top: 0;
+
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+
+  .question-row:not(.exam-mode-row):not(.is-review) .mark-button {
+    grid-column: 3;
+    grid-row: 2;
+    justify-self: center;
+  }
+
+  .question-row:not(.exam-mode-row):not(.is-review) .result-button,
+  .question-row:not(.exam-mode-row):not(.is-review) .mark-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* Labels compress: your-answer row is self-evident, the key row
+     keeps a micro-caption (button aria-labels carry full meaning). */
+  .question-row:not(.exam-mode-row):not(.is-review) .answer-row > .answer-label {
+    display: none;
+  }
+
+  .question-row:not(.exam-mode-row):not(.is-review) .correct-answer-row {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .question-row:not(.exam-mode-row):not(.is-review) .correct-answer-label {
+    flex-basis: 100%;
+    width: auto;
+  }
+
+  .question-row:not(.exam-mode-row):not(.is-review) .answer-options,
+  .question-row:not(.exam-mode-row):not(.is-review) .correct-answer-options {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .question-row:not(.exam-mode-row):not(.is-review) .answer-choice,
+  .question-row:not(.exam-mode-row):not(.is-review) .correct-answer-choice {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+  }
+
+}
+
+
+/* =========================================================
+   Exam Type Toggle
+========================================================= */
+
+.exam-type-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.exam-type-btn {
+  flex: 1;
+  padding: 10px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    border-color var(--transition),
+    background var(--transition),
+    color var(--transition);
+}
+
+.exam-type-btn:hover {
+  border-color: var(--border-hover);
+}
+
+.exam-type-btn.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+
+/* =========================================================
+   Answer Key Editor
+========================================================= */
+
+.answer-key-editor {
+  margin-top: 4px;
+}
+
+.answer-key-hint {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.answer-key-bulk {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.answer-key-bulk .secondary-button {
+  font-size: 12px;
+  min-height: 32px;
+  padding: 6px 10px;
+}
+
+.answer-key-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+
+/* =========================================================
+   Exam Finish Button
+========================================================= */
+
+.exam-finish-btn {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.exam-finish-btn:hover {
+  background: var(--danger-hover, #b91c1c);
+  border-color: var(--danger-hover, #b91c1c);
+}
+
+
+/* =========================================================
+   Exam Timer — retired: ExamTimer now renders .focus-timer
+   (see redesign-exam.css)
+   ========================================================= */
+
+
+/* =========================================================
+   Exam Start Page
+========================================================= */
+
+.exam-start-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: calc(100vh - 120px);
+}
+/* Retired: exam start now renders .exam-brief-* (see redesign-exam.css) */
+
+
+/* =========================================================
+   Exam Results Page
+   ========================================================= */
+
+.exam-results-page {
+  width: 100%;
+  max-width: 800px;
+
+  margin: 0 auto;
+}
+
+.exam-results-header {
+  margin-bottom: 24px;
+}
+
+.exam-results-header h1 {
+  margin: 10px 0 4px;
+
+  color: var(--text);
+  font-size: 26px;
+  font-weight: 750;
+}
+
+.exam-results-header p {
+  margin: 0;
+
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.exam-results-card {
+  display: flex;
+  align-items: center;
+
+  gap: 32px;
+
+  padding: 24px;
+
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+
+  box-shadow: var(--shadow-sm);
+
+  margin-bottom: 24px;
+}
+
+/* Retired: results hero now renders .score-ring + .results-breakdown
+   (see redesign-exam.css). .results-grade below is still live. */
+
+.results-grade {
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
+
+  margin-top: 2px;
+}
+
+/* Retired: result stats now render .breakdown-legend (see redesign-exam.css) */
+
+.results-total-note {
+  margin: 10px 0 0;
+  width: 100%;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.results-review-section {
+  margin-bottom: 24px;
+}
+
+.results-review-section h2 {
+  margin: 0 0 12px;
+
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.results-review-list {
+  display: flex;
+  flex-wrap: wrap;
+
+  gap: 6px;
+}
+
+.results-review-item {
+  width: 40px;
+  height: 40px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 8px;
+
+  text-decoration: none;
+
+  border: 1px solid var(--border);
+  background: var(--surface);
+
+  transition:
+    transform var(--transition),
+    border-color var(--transition);
+}
+
+.results-review-item:hover {
+  transform: translateY(-1px);
+  border-color: var(--primary);
+}
+
+.results-review-number {
+  font-size: 11px;
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.results-review-status {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.results-review-correct {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+}
+
+.results-review-correct .results-review-status {
+  color: var(--success);
+}
+
+.results-review-wrong {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.results-review-wrong .results-review-status {
+  color: var(--danger);
+}
+
+.results-review-unanswered .results-review-status {
+  color: var(--muted);
+}
+
+.results-review-ungraded .results-review-status {
+  color: var(--warning);
+}
+
+.results-actions {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .exam-results-card {
+    flex-direction: column;
+    gap: 20px;
+    text-align: center;
+  }
+
+  .results-review-item {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+
+/* =========================================================
+   Calendar Page (header now uses shared PageHeader → .page-head)
+   ========================================================= */
+
+.calendar-layout {
+  display: flex;
+  gap: 24px;
+  max-width: 1100px;
+}
+
+.calendar-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.calendar-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+}
+
+/* =========================================================
+   Calendar View
+========================================================= */
+
+.calendar-view {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.calendar-nav-center {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.calendar-nav-center h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.calendar-today-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    background var(--transition),
+    border-color var(--transition);
+}
+
+.calendar-today-btn:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.calendar-day-name {
+  text-align: center;
+  padding: 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.calendar-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  transition:
+    background var(--transition),
+    border-color var(--transition);
+}
+
+.calendar-day:hover {
+  background: var(--background);
+}
+
+.calendar-day.other-month {
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+.calendar-day.today {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  font-weight: 700;
+}
+
+.calendar-day.selected {
+  background: var(--primary);
+  color: #fff;
+}
+
+.calendar-day.selected .calendar-day-dot {
+  background: #fff;
+}
+
+.calendar-day-number {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.calendar-day-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--success);
+  margin-top: 3px;
+}
+
+.calendar-day.has-activity {
+  font-weight: 600;
+}
+
+/* =========================================================
+   Day Detail
+========================================================= */
+
+.day-detail {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.day-detail h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.day-detail-date {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.day-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.day-detail-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: center;
+}
+
+.day-detail-stat-value {
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.day-detail-stat-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.day-detail-stat-correct .day-detail-stat-value { color: var(--success); }
+.day-detail-stat-wrong .day-detail-stat-value { color: var(--danger); }
+
+.day-detail-exams {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.day-detail-exam-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.day-detail-exam-name {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.day-detail-exam-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* =========================================================
+   Day Detail — Subject Report
+========================================================= */
+
+.day-detail-completed-note {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  color: var(--success);
+  font-size: 12px;
+  background: var(--success-soft);
+  border: 1px solid var(--success-border);
+  border-radius: var(--radius-sm);
+}
+
+.day-detail-subjects {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.day-detail-subjects h4 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.day-detail-subject {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+
+.day-detail-subject-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  transition: background var(--transition);
+}
+
+.day-detail-subject-header:hover {
+  background: var(--background);
+}
+
+.day-detail-subject-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+
+.day-detail-subject-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.day-detail-expand-icon {
+  font-size: 10px;
+}
+
+.day-detail-subject-body {
+  padding: 4px 10px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--background);
+}
+
+.day-detail-folder {
+  padding: 6px 0;
+}
+
+.day-detail-folder + .day-detail-folder {
+  border-top: 1px dashed var(--border);
+}
+
+.day-detail-folder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.day-detail-folder-name {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.day-detail-folder-count {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.day-detail-completed-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--success);
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+}
+
+/* =========================================================
+   Exam Results — Time Card
+========================================================= */
+
+.results-time-card {
+  display: flex;
+  gap: 24px;
+  padding: 14px 20px;
+  margin-bottom: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.results-time-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.results-time-value {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.results-time-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .results-time-card {
+    gap: 16px;
+    padding: 12px 14px;
+  }
+}
+
+.calendar-no-activity {
+  margin-top: 16px;
+  padding: 20px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.calendar-no-activity span {
+  font-size: 28px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.calendar-no-activity p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* =========================================================
+   Month Summary
+========================================================= */
+
+.month-summary {
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.month-summary h3 {
+  margin: 0 0 14px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.month-summary-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.month-summary-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.month-summary-stat-value {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.month-summary-stat-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.month-summary-breakdown {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.month-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.month-summary-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.month-summary-dot.correct { background: var(--success); }
+.month-summary-dot.wrong { background: var(--danger); }
+
+/* =========================================================
+   Mini Calendar
+========================================================= */
+
+.mini-calendar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.mini-calendar-header {
+  margin-bottom: 10px;
+}
+
+.mini-calendar-title {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.mini-calendar-title:hover {
+  color: var(--primary);
+}
+
+.mini-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.mini-calendar-dayname {
+  text-align: center;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.mini-calendar-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  min-height: 28px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.mini-calendar-cell.empty {
+  visibility: hidden;
+}
+
+.mini-calendar-cell.today {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+}
+
+.mini-calendar-cell.has-activity {
+  position: relative;
+}
+
+.mini-calendar-cell.has-activity::after {
+  content: "";
+  position: absolute;
+  bottom: 2px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+/* =========================================================
+   Calendar Responsive
+========================================================= */
+
+@media (max-width: 768px) {
+  .calendar-layout {
+    flex-direction: column;
+  }
+
+  .calendar-sidebar {
+    width: 100%;
+  }
+
+  .day-detail-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .calendar-day {
+    min-height: 36px;
+    font-size: 12px;
+  }
+
+  .calendar-nav-center h2 {
+    font-size: 15px;
+  }
+}

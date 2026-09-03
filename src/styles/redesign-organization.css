@@ -1,0 +1,434 @@
+/* =========================================================
+   REDESIGN LAYER — Organization pages
+   Folders, Subjects, Folder detail, Marked.
+   Flat editorial surfaces: hairlines over boxes,
+   typography over chrome.
+========================================================= */
+
+/* ---------- Page masthead (Home heading; other pages use PageHeader) ---------- */
+
+.home-heading h1 {
+  font-size: var(--text-3xl);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  margin-bottom: 4px;
+}
+
+.home-heading p {
+  color: var(--muted);
+  font-size: var(--text-md);
+}
+
+/* ---------- Search ---------- */
+
+.home-search {
+  margin-bottom: 28px;
+}
+
+/* ---------- Search: one bordered entity ----------
+   The box owns border/radius/focus; the input is borderless fill.
+   Icon slot (inline-start) + reserved clear slot (inline-end). */
+
+.search-box {
+  min-height: 52px;
+  padding-block: 0;
+  padding-inline-start: 14px;
+  padding-inline-end: 8px;
+  gap: 10px;
+
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.search-box:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.search-box input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  min-height: 50px;
+  font-size: var(--text-base);
+}
+
+/* The box is the single focus indicator — kill the global input
+   outline here so focused state shows exactly one border. */
+.search-box input:focus,
+.search-box input:focus-visible {
+  outline: none;
+}
+
+.search-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  color: var(--muted);
+  font-size: 14px;
+
+  transition: color var(--transition), transform var(--transition);
+}
+
+.search-box:focus-within .search-icon {
+  color: var(--primary);
+  transform: scale(1.08);
+}
+
+.search-clear {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+
+  width: 30px;
+  height: 30px;
+  padding: 0;
+
+  border: 0;
+  border-radius: 50%;
+
+  background: var(--background);
+  color: var(--muted);
+
+  cursor: pointer;
+
+  transition: background var(--transition), color var(--transition), opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.search-clear:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.search-clear:active {
+  transform: scale(0.9);
+}
+
+/* Reserved slot: no layout shift when the button appears */
+.search-clear.is-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.search-results {
+  margin-top: 6px;
+  padding: 6px;
+
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.search-result {
+  padding: 9px 10px;
+  border-radius: var(--radius-md);
+}
+
+.search-result-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+}
+
+/* ---------- Folders grid → editorial tiles ---------- */
+
+.folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.folder-card {
+  position: relative;
+
+  /* Two rows: [content | controls] + full-width subject footer.
+     The trailing cluster is exactly two icon buttons, so the name
+     column always breathes; the picker gets the full card width
+     where long subject names truncate safely. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 0;
+
+  min-height: 92px;
+  padding: 16px 18px;
+
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+}
+
+.folder-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.folder-card .folder-main {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+
+.folder-card .folder-actions {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* Subject picker footer: quiet metadata row with the full card
+   width, so long subject names truncate safely and the trailing
+   cluster stays exactly two icon buttons. */
+.folder-subject-row {
+  grid-column: 1 / -1;
+  grid-row: 2;
+
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  margin-top: 10px;
+  padding-top: 10px;
+
+  border-top: 1px dashed var(--divider);
+}
+
+.folder-subject-row .filter-dot {
+  flex-shrink: 0;
+}
+
+.folder-progress {
+  position: absolute;
+  bottom: -1px;
+  inset-inline: 17px;
+
+  height: 2px;
+
+  overflow: hidden;
+}
+
+.folder-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--primary), var(--warm));
+}
+
+.folder-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+
+  box-shadow: inset 0 0 0 1px var(--divider);
+  font-size: 17px;
+}
+
+.folder-info h3 {
+  font-size: var(--text-md);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 3px;
+}
+
+/* Belt and braces: nothing in the content column may ever
+   paint outside its slot, in either direction. */
+.folder-info {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.folder-info p {
+  font-size: var(--text-xs);
+}
+
+/* ---------- Subject filter chips ---------- */
+
+.folders-subject-filter {
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.filter-chip {
+  padding: 6px 13px;
+
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.filter-chip:hover {
+  border-color: var(--border-hover);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.filter-chip.active {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--background);
+}
+
+/* ---------- Subjects grid ---------- */
+
+.subjects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.subject-card {
+  min-height: 88px;
+  padding: 16px 18px;
+  gap: 13px;
+
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+}
+
+.subject-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.subject-color {
+  width: 8px;
+  height: 40px;
+  border-radius: var(--radius-full);
+}
+
+.subject-info h3 {
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+/* ---------- Folder detail header ---------- */
+
+.folder-page-header {
+  margin-bottom: 28px;
+}
+
+.folder-heading-row h1 {
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.folder-heading-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
+
+  background: var(--surface);
+  color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px var(--divider);
+}
+
+/* ---------- Exam list rows (folder detail) ---------- */
+
+.exam-list {
+  gap: 0;
+  border-top: 1px solid var(--divider);
+}
+
+.exam-list-card {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--divider);
+  border-radius: 0;
+  box-shadow: none;
+
+  transition: background var(--transition);
+}
+
+.exam-list-card:hover {
+  background: var(--surface-soft);
+  border-color: var(--divider);
+  box-shadow: none;
+}
+
+.exam-list-main {
+  padding: 15px 10px;
+  gap: 13px;
+}
+
+.exam-list-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--divider);
+  font-size: 15px;
+}
+
+.exam-list-main h3 {
+  font-size: var(--text-md);
+  font-weight: 650;
+  margin-bottom: 2px;
+}
+
+.exam-list-main p {
+  font-size: var(--text-xs);
+}
+
+/* ---------- Marked page ---------- */
+
+.marked-group {
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  box-shadow: none;
+}
+
+.marked-group:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-sm);
+}
+
+.marked-group-header {
+  background: transparent;
+}
+
+.marked-question {
+  background: var(--surface-soft);
+  border-color: var(--divider);
+}
+
+.marked-question:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary-border);
+}
+
+@media (max-width: 600px) {
+  .home-heading h1 {
+    font-size: var(--text-2xl);
+  }
+
+  .folder-grid,
+  .subjects-grid {
+    grid-template-columns: 1fr;
+  }
+}
