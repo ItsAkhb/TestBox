@@ -5,7 +5,12 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'android/app/src/main/assets/public', 'release']),
+  globalIgnores([
+    'dist',
+    'android/app/build',
+    'android/app/src/main/assets/public',
+    'release',
+  ]),
   {
     // Build/config files run in Node, not the browser.
     files: ['*.config.js'],
