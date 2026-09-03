@@ -26,3 +26,23 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Build artifacts
+release/
+
+# Android local build outputs
+android/.gradle/
+android/app/build/
+android/local.properties
+
+# Android signing material — never commit
+android/*.keystore
+android/app/*.keystore
+*.jks
+keystore.properties
+
+# User's local archive
+testbox.rar
+
+# Local agent/editor configuration
+.claude/
