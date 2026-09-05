@@ -29,6 +29,7 @@ import { getQuestionNumbers } from "../services/scoring";
 import { useTranslation } from "../i18n";
 import useTimer from "../hooks/useTimer";
 import useStopwatch from "../hooks/useStopwatch";
+import { useSession } from "../context/SessionContext";
 import ExamTimer from "../components/exam/ExamTimer";
 import QuestionNavigator from "../components/exam/QuestionNavigator";
 import Modal from "../components/ui/Modal";
@@ -631,6 +632,60 @@ function ExamContent({ id }) {
   const stopwatch = useStopwatch(stopwatchOn ? id : null, {
     onTick: handleStopwatchTick,
   });
+
+  // Mirror the active timer/stopwatch into the shared session state so
+  // the TopBar shows it on every page (no second engine — display only).
+  // Exam sessions are wall-clock ({endsAt}) and stay registered across
+  // navigation, matching the persisted timer's own behavior. Practice
+  // stopwatches pause on unmount (engine behavior) so they clear here.
+  const { updateSession } = useSession();
+  useEffect(() => {
+    if (isExamMode && timer.remaining > 0) {
+      updateSession({
+        kind: "exam",
+        examId: id,
+        label: exam?.name || "",
+        endsAt: Date.now() + timer.remaining * 1000,
+      });
+    } else if (isExamMode) {
+      updateSession(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isExamMode, id, exam?.name, timer.remaining > 0, updateSession]);
+
+  useEffect(() => {
+    if (stopwatchOn && stopwatch.elapsedMs > 0) {
+      updateSession({
+        kind: "stopwatch",
+        examId: id,
+        label: exam?.name || "",
+        elapsedMs: stopwatch.elapsedMs,
+        running: stopwatch.running,
+      });
+    } else if (!isExamMode) {
+      updateSession(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    stopwatchOn,
+    stopwatch.elapsedMs,
+    stopwatch.running,
+    isExamMode,
+    id,
+    exam?.name,
+    updateSession,
+  ]);
+
+  // Practice stopwatch: its engine pauses on unmount, so drop the
+  // session indicator when leaving the page. Exam sessions persist
+  // (the countdown keeps running like the persisted timer record).
+  useEffect(() => {
+    return () => {
+      updateSession((current) =>
+        current && current.kind === "stopwatch" ? null : current
+      );
+    };
+  }, [updateSession]);
 
   function handleStopwatchPause() {
     const flushed = stopwatch.pause();

@@ -305,6 +305,41 @@ html[dir="rtl"] .sidebar {
   50% { opacity: 0.35; }
 }
 
+/* Active session indicator — exam countdown or practice stopwatch,
+   mirrored from the Exam page's own engines (display-only). */
+.topbar-session {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+
+  padding: var(--space-1-5) var(--space-2-5);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.topbar-session svg {
+  color: var(--muted);
+}
+
+.topbar-session-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.topbar-session.is-paused {
+  color: var(--muted);
+}
+
+.topbar-session.is-paused .topbar-session-time {
+  text-decoration: none;
+  opacity: 0.7;
+}
+
 /* TopBar right — actions */
 .topbar-right {
   display: flex;
@@ -548,17 +583,29 @@ html[dir="rtl"] .app-main {
 @media (max-width: 600px) {
   .topbar {
     padding: 0 var(--space-3);
+    gap: var(--space-2);
   }
 
+  /* Sync/weather/time stay visible on mobile — compacted, not hidden.
+     Full text is dropped in favor of dot-only sync; weather keeps icon
+     + temperature; clock drops the date line. */
   .topbar-weather {
-    display: none;
+    padding: var(--space-1);
+    background: transparent;
+    border-color: transparent;
   }
 
   .topbar-sync {
+    padding: var(--space-1);
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .topbar-sync .sync-text {
     display: none;
   }
 
-  .topbar-time {
+  .topbar-date {
     display: none;
   }
 
@@ -570,5 +617,9 @@ html[dir="rtl"] .app-main {
 @media (max-width: 360px) {
   .page-stage {
     padding: var(--space-3) var(--space-3) calc(var(--mobile-nav-height) + var(--space-4));
+  }
+
+  .topbar-weather {
+    display: none;
   }
 }

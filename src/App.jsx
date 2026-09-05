@@ -13,7 +13,7 @@ import ExamStart from "./pages/ExamStart";
 import ExamResults from "./pages/ExamResults";
 import Folders from "./pages/Folders";
 import Subjects from "./pages/Subjects";
-import Marked from "./pages/Marked";
+import Marked from "./pages/Tags";
 import Settings from "./pages/Settings";
 import Calendar from "./pages/Calendar";
 import Login from "./pages/Login";

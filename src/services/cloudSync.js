@@ -12,9 +12,10 @@ import {
   saveSubjects,
   getActivity,
   saveActivity,
-  getAllActivityDates,
   getSettings,
   saveSettings,
+  getTags,
+  saveTags,
   getDirtyState,
   setDirtySuppression,
 } from "./dataService";
@@ -36,10 +37,18 @@ const schemaCapabilities = {
   examsType: false,
   examsAnswerKey: false,
   examsExamState: false,
+  examsStopwatch: false,
   subjectsTable: false,
   activityTable: false,
   settingsTable: false,
+  tagsTable: false,
+  examsTagIds: false,
 };
+
+// Whether this page session has completed at least one cloud→local
+// pull. Guards the legacy wholesale-prune in syncLocalToCloud: before
+// any pull, "absent locally" must not be read as "deleted locally".
+let sessionHasPulled = false;
 
 async function columnExists(table, column) {
   try {
@@ -75,26 +84,35 @@ export async function probeSchemaCapabilities() {
     examsType,
     examsAnswerKey,
     examsExamState,
+    examsStopwatch,
     subjectsTable,
     activityTable,
     settingsTable,
+    tagsTable,
+    examsTagIds,
   ] = await Promise.all([
     columnExists("folders", "subject_id"),
     columnExists("exams", "type"),
     columnExists("exams", "answer_key"),
     columnExists("exams", "exam_state"),
+    columnExists("exams", "stopwatch_enabled"),
     tableExists("subjects"),
     tableExists("daily_activity"),
     tableExists("user_settings"),
+    tableExists("tags"),
+    columnExists("exams", "tag_ids"),
   ]);
 
   schemaCapabilities.foldersSubjectId = foldersSubjectId;
   schemaCapabilities.examsType = examsType;
   schemaCapabilities.examsAnswerKey = examsAnswerKey;
   schemaCapabilities.examsExamState = examsExamState;
+  schemaCapabilities.examsStopwatch = examsStopwatch;
   schemaCapabilities.subjectsTable = subjectsTable;
   schemaCapabilities.activityTable = activityTable;
   schemaCapabilities.settingsTable = settingsTable;
+  schemaCapabilities.tagsTable = tagsTable;
+  schemaCapabilities.examsTagIds = examsTagIds;
   schemaCapabilities.probed = true;
 
   return schemaCapabilities;
@@ -135,6 +153,12 @@ function getQuestionNumbers(exam) {
     (_, index) =>
       start + index * step
   );
+}
+
+// The stopwatch flag only applies to practice exams; exam-type rows
+// always persist it as false so the cloud value stays deterministic.
+function isExamTypePracticeOnly(exam) {
+  return exam.type === "exam";
 }
 
 function buildQuestionRows(
@@ -257,9 +281,10 @@ async function syncFolder(
 }
 
 async function syncSubjects(
-  userId
+  userId,
+  subjectsDirty
 ) {
-  if (!schemaCapabilities.subjectsTable) {
+  if (!schemaCapabilities.subjectsTable || !subjectsDirty) {
     return;
   }
 
@@ -287,22 +312,27 @@ async function syncSubjects(
   }
 }
 
-// Local activity wins per day (activity days are authored on one device per
-// day in practice); remote days not present locally are pulled on download.
+// Uploads ONLY the activity days flagged dirty in this sync cycle.
+// Uploading every local day unconditionally would (a) waste bandwidth
+// on large histories and (b) let a mid-sync dirtied day slip into the
+// cleared snapshot and lose its upload.
 async function syncActivity(
-  userId
+  userId,
+  dirtyActivity
 ) {
   if (!schemaCapabilities.activityTable) {
     return;
   }
 
-  const dates = getAllActivityDates();
+  const dirtyDates = Object.keys(dirtyActivity || {}).filter(
+    (date) => dirtyActivity[date]
+  );
 
-  if (dates.length === 0) {
+  if (dirtyDates.length === 0) {
     return;
   }
 
-  const rows = dates
+  const rows = dirtyDates
     .map((date) => {
       const data = getActivity(date);
       if (!data) return null;
@@ -329,9 +359,13 @@ async function syncActivity(
 }
 
 async function syncSettings(
-  userId
+  userId,
+  settingsDirty
 ) {
-  if (!schemaCapabilities.settingsTable) {
+  // Settings upload only when locally dirty — otherwise a device that
+  // never changed settings would push its defaults over cloud values
+  // another device deliberately saved.
+  if (!schemaCapabilities.settingsTable || !settingsDirty) {
     return;
   }
 
@@ -346,6 +380,40 @@ async function syncSettings(
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id" }
+    );
+
+  if (error) {
+    throw error;
+  }
+}
+
+// Uploads only locally-dirty tag definitions. Assignments ride on the
+// exam rows themselves (tagIds column), so they sync with exams.
+async function syncTags(
+  userId,
+  tagsDirty
+) {
+  if (!schemaCapabilities.tagsTable || !tagsDirty) {
+    return;
+  }
+
+  const tags = getTags();
+
+  if (tags.length === 0) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from("tags")
+    .upsert(
+      tags.map((tag) => ({
+        id: tag.id,
+        user_id: userId,
+        name: tag.name,
+        color: tag.color ?? null,
+        updated_at: new Date().toISOString(),
+      })),
+      { onConflict: "id" }
     );
 
   if (error) {
@@ -409,6 +477,14 @@ async function syncExam(
     if (exam.timerDuration != null) {
       row.timer_duration = Number(exam.timerDuration);
     }
+    if (schemaCapabilities.examsStopwatch) {
+      row.stopwatch_enabled =
+        !isExamTypePracticeOnly(exam) &&
+        Boolean(exam.stopwatchEnabled);
+    }
+  }
+  if (schemaCapabilities.examsTagIds && Array.isArray(exam.tagIds)) {
+    row.tag_ids = exam.tagIds.map(String);
   }
   if (schemaCapabilities.examsAnswerKey && data.answerKey) {
     row.answer_key = data.answerKey;
@@ -543,10 +619,17 @@ export async function syncLocalToCloud(
   // Local deletions first (tombstones) — never resurrected
   await applyLocalDeletesToCloud(userId, dirtyState.deletes);
 
-  // Legacy wholesale-prune: only when the dirty registry carries no
-  // tombstones for the section (prevents wiping cloud rows on a
-  // fresh/offline-seeded device whose local list is incomplete).
-  if (dirtyState.deletes.length === 0) {
+  // Legacy wholesale-prune: deletes cloud rows missing from the local
+  // list. UNSAFE before the first completed pull of the session — a
+  // fresh device (or one that never downloaded yet) would mistake the
+  // not-yet-downloaded cloud rows for "deleted locally" and wipe them.
+  // After a pull, an absent local row is genuinely deleted or was
+  // pruned by another device, so the prune is safe then. Until then,
+  // only tombstones (explicit deletes) propagate.
+  if (
+    sessionHasPulled &&
+    dirtyState.deletes.length === 0
+  ) {
     if (dirtyState.exams) {
       await deleteCloudExamsNotInLocal(userId, exams);
     }
@@ -575,11 +658,12 @@ export async function syncLocalToCloud(
     )
   );
 
-  // New-feature data: subjects, activity, settings (capability-gated)
+  // New-feature data: subjects, activity, settings, tags (capability-gated)
   await Promise.all([
-    syncSubjects(userId),
-    syncActivity(userId),
-    syncSettings(userId),
+    syncSubjects(userId, dirtyState.subjects),
+    syncActivity(userId, dirtyState.activity),
+    syncSettings(userId, dirtyState.settings),
+    syncTags(userId, dirtyState.tags),
   ]);
 
   return {
@@ -599,6 +683,9 @@ async function applyLocalDeletesToCloud(userId, deletes) {
     .map((d) => String(d.id));
   const folderDeletes = deletes
     .filter((d) => d && d.type === "folder")
+    .map((d) => String(d.id));
+  const tagDeletes = deletes
+    .filter((d) => d && d.type === "tag")
     .map((d) => String(d.id));
 
   if (examDeletes.length > 0) {
@@ -623,6 +710,15 @@ async function applyLocalDeletesToCloud(userId, deletes) {
       .delete()
       .eq("user_id", userId)
       .in("id", folderDeletes);
+    if (error) throw error;
+  }
+
+  if (tagDeletes.length > 0 && schemaCapabilities.tagsTable) {
+    const { error } = await supabase
+      .from("tags")
+      .delete()
+      .eq("user_id", userId)
+      .in("id", tagDeletes);
     if (error) throw error;
   }
 }
@@ -720,6 +816,23 @@ async function getCloudSettings(
   }
 
   return data || null;
+}
+
+async function getCloudTags(userId) {
+  if (!schemaCapabilities.tagsTable) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("tags")
+    .select("id, name, color")
+    .eq("user_id", userId);
+
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
 }
 
 async function deleteCloudFoldersNotInLocal(
@@ -852,6 +965,12 @@ async function getCloudExams(
 
   if (schemaCapabilities.examsType) {
     columns.push("type", "timer_duration");
+    if (schemaCapabilities.examsStopwatch) {
+      columns.push("stopwatch_enabled");
+    }
+  }
+  if (schemaCapabilities.examsTagIds) {
+    columns.push("tag_ids");
   }
   if (schemaCapabilities.examsAnswerKey) {
     columns.push("answer_key");
@@ -974,6 +1093,13 @@ function buildLocalExam(
     if (cloudExam.timer_duration != null) {
       localExam.timerDuration = cloudExam.timer_duration;
     }
+    if (schemaCapabilities.examsStopwatch) {
+      localExam.stopwatchEnabled =
+        localExam.type !== "exam" && Boolean(cloudExam.stopwatch_enabled);
+    }
+  }
+  if (schemaCapabilities.examsTagIds && Array.isArray(cloudExam.tag_ids)) {
+    localExam.tagIds = cloudExam.tag_ids;
   }
 
   return localExam;
@@ -1246,6 +1372,31 @@ export async function syncCloudToLocal(
       }
     }
 
+    // Tags: cloud-only tags are added; clean local tags adopt cloud
+    // names/colors; dirty local tags win (re-uploaded on next push).
+    // Local tags are never dropped (tag deletes are tombstoned).
+    if (schemaCapabilities.tagsTable && !dirtyState.tags) {
+      const cloudTags = await getCloudTags(userId);
+      const localTags = getTags();
+      const cloudById = new Map(cloudTags.map((t) => [String(t.id), t]));
+      const merged = localTags.map((tag) => {
+        const cloudTag = cloudById.get(String(tag.id));
+        if (!cloudTag) return tag;
+        return {
+          ...tag,
+          name: cloudTag.name ?? tag.name,
+          color: cloudTag.color ?? tag.color ?? undefined,
+        };
+      });
+      const localIds = new Set(localTags.map((t) => String(t.id)));
+      cloudTags.forEach((tag) => {
+        if (!localIds.has(String(tag.id))) {
+          merged.push({ id: tag.id, name: tag.name, color: tag.color ?? undefined });
+        }
+      });
+      saveTags(merged);
+    }
+
     return {
       folders:
         mergedFolders.length,
@@ -1258,6 +1409,9 @@ export async function syncCloudToLocal(
     };
   } finally {
     setDirtySuppression(false);
+    // The prune guard needs "at least one completed pull" — set it
+    // only after this function returns successfully.
+    sessionHasPulled = true;
   }
 }
 

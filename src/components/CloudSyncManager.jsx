@@ -9,6 +9,11 @@ import { useAuth } from "../context/AuthContext";
 import {
   getFolders,
   getExams,
+  getExamData,
+  getSubjects,
+  getSettings,
+  getTags,
+  getActivity,
   getDirtyState,
   clearDirtySection,
   hasPendingLocalChanges,
@@ -87,6 +92,73 @@ function CloudSyncManager() {
 
   const syncLocalChangesRef = useRef(null);
 
+  // Pushes the dirty snapshot, then clears dirty marks ONLY for content
+  // identical to what was actually uploaded. An edit landing mid-push
+  // changes the fingerprint, so its section stays dirty and re-uploads
+  // on the next cycle — no silently dropped changes.
+  const pushAndClearDirty = useCallback(async (userId) => {
+    const dirty = getDirtyState();
+    const fingerprint = (value) => {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return null;
+      }
+    };
+
+    const before = {
+      folders: dirty.folders ? fingerprint(getFolders()) : null,
+      exams: dirty.exams ? fingerprint(getExams()) : null,
+      subjects: dirty.subjects ? fingerprint(getSubjects()) : null,
+      settings: dirty.settings ? fingerprint(getSettings()) : null,
+      tags: dirty.tags ? fingerprint(getTags()) : null,
+      examData: {},
+      activity: {},
+    };
+    Object.keys(dirty.examData || {}).forEach((examId) => {
+      if (dirty.examData[examId]) {
+        before.examData[examId] = fingerprint(getExamData(examId));
+      }
+    });
+    Object.keys(dirty.activity || {}).forEach((day) => {
+      if (dirty.activity[day]) {
+        before.activity[day] = fingerprint(getActivity(day));
+      }
+    });
+
+    await syncLocalToCloud(userId, { dirty });
+
+    if (dirty.deletes.length > 0) {
+      // Tombstones carry no content that can change mid-push.
+      clearDirtySection("deletes");
+    }
+    if (before.folders !== null && fingerprint(getFolders()) === before.folders) {
+      clearDirtySection("folders");
+    }
+    if (before.exams !== null && fingerprint(getExams()) === before.exams) {
+      clearDirtySection("exams");
+    }
+    if (before.subjects !== null && fingerprint(getSubjects()) === before.subjects) {
+      clearDirtySection("subjects");
+    }
+    if (before.settings !== null && fingerprint(getSettings()) === before.settings) {
+      clearDirtySection("settings");
+    }
+    if (before.tags !== null && fingerprint(getTags()) === before.tags) {
+      clearDirtySection("tags");
+    }
+    Object.keys(before.examData).forEach((examId) => {
+      if (fingerprint(getExamData(examId)) === before.examData[examId]) {
+        clearDirtySection("examData", [examId]);
+      }
+    });
+    Object.keys(before.activity).forEach((day) => {
+      if (fingerprint(getActivity(day)) === before.activity[day]) {
+        clearDirtySection("activity", [day]);
+      }
+    });
+  }, []);
+
   const clearBackoff = useCallback(() => {
     if (backoffTimerRef.current) {
       clearTimeout(backoffTimerRef.current);
@@ -159,40 +231,9 @@ function CloudSyncManager() {
 
             // UPLOAD FIRST: local changes go to cloud before any
             // download so offline edits can never be overwritten.
-            const dirty = getDirtyState();
-
-            await syncLocalToCloud(user.id, { dirty });
-
-            if (dirty.deletes.length > 0) {
-              clearDirtySection("deletes");
-            }
-            if (dirty.folders) {
-              clearDirtySection("folders");
-            }
-            if (dirty.exams) {
-              clearDirtySection("exams");
-            }
-            if (dirty.examData && Object.keys(dirty.examData).length > 0) {
-              clearDirtySection(
-                "examData",
-                Object.keys(dirty.examData)
-              );
-            }
-            if (dirty.subjects) {
-              clearDirtySection("subjects");
-            }
-            if (dirty.settings) {
-              clearDirtySection("settings");
-            }
-
-            // Activity days upload inside syncLocalToCloud; clear the
-            // same snapshot of days we just pushed.
-            if (dirty.activity && Object.keys(dirty.activity).length > 0) {
-              clearDirtySection(
-                "activity",
-                Object.keys(dirty.activity)
-              );
-            }
+            // Dirty marks clear only for content identical to what
+            // was uploaded (mid-push edits stay dirty).
+            await pushAndClearDirty(user.id);
 
 
             // DOWNLOAD/RECONCILE: after a clean upload, pull cloud
@@ -243,6 +284,7 @@ function CloudSyncManager() {
       user,
       setSyncStatus,
       scheduleRetry,
+      pushAndClearDirty,
     ]);
 
   useEffect(() => {
@@ -370,8 +412,6 @@ function CloudSyncManager() {
 
 
 
-        const dirty = getDirtyState();
-
         const localHasData =
           getFolders().length > 0 ||
           getExams().length > 0;
@@ -384,19 +424,7 @@ function CloudSyncManager() {
         // when the cloud has data. Pull only touches clean entities.
         if (localHasData || hasPendingLocalChanges()) {
 
-          await syncLocalToCloud(user.id, { dirty });
-
-          if (dirty.deletes.length > 0) clearDirtySection("deletes");
-          if (dirty.folders) clearDirtySection("folders");
-          if (dirty.exams) clearDirtySection("exams");
-          if (dirty.examData) {
-            clearDirtySection("examData", Object.keys(dirty.examData));
-          }
-          if (dirty.subjects) clearDirtySection("subjects");
-          if (dirty.settings) clearDirtySection("settings");
-          if (dirty.activity) {
-            clearDirtySection("activity", Object.keys(dirty.activity));
-          }
+          await pushAndClearDirty(user.id);
 
         }
 
@@ -523,6 +551,7 @@ function CloudSyncManager() {
     setSyncStatus,
     clearBackoff,
     scheduleRetry,
+    pushAndClearDirty,
     isOffline,
   ]);
 

@@ -12,4 +12,9 @@ const base =
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
   base: mode === "packaged" ? "./" : base,
+  // Bind IPv4 loopback: on some Windows setups connecting to the default
+  // [::1] binding fails with EACCES, breaking the dev server entirely.
+  server: {
+    host: "127.0.0.1",
+  },
 }));

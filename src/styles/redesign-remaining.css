@@ -323,3 +323,91 @@
     flex: 1 1 100%;
   }
 }
+
+/* ---------- Tags (ex-Marked) ---------- */
+
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+
+  padding: 3px 9px;
+
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+
+  background: var(--surface);
+  color: var(--text-secondary);
+
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tag-assign-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.tag-assign-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  padding: 8px 10px;
+
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+
+  background: var(--surface);
+  color: var(--text);
+
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+.tag-assign-row input[type="checkbox"] {
+  accent-color: var(--primary);
+}
+
+.tag-assign-empty {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  margin-bottom: 8px;
+}
+
+.tag-filter-chip-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.tag-chip-edit {
+  display: grid;
+  place-items: center;
+
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+
+  background: var(--surface);
+  color: var(--muted);
+
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+}
+
+.tag-chip-edit:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
+}

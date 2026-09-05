@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   createBackup,
@@ -12,6 +12,10 @@ import { searchCities } from "../services/weather";
 import Icon from "../components/ui/Icon";
 import PageHeader from "../components/ui/PageHeader";
 
+// Available only inside the Electron shell (preload exposes it).
+const desktopBridge =
+  typeof window !== "undefined" ? window.testboxDesktop : null;
+
 function Settings() {
   const { t, language } = useTranslation();
   const fileInputRef = useRef(null);
@@ -22,7 +26,32 @@ function Settings() {
   const [weatherSearching, setWeatherSearching] = useState(false);
   const [weatherError, setWeatherError] = useState("");
 
+  const [closeToTray, setCloseToTray] = useState(false);
+
   const searchTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (desktopBridge?.getCloseToTray) {
+      desktopBridge
+        .getCloseToTray()
+        .then((enabled) => {
+          if (!cancelled) setCloseToTray(Boolean(enabled));
+        })
+        .catch(() => {});
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function toggleCloseToTray() {
+    const next = !closeToTray;
+    setCloseToTray(next);
+    // Persist Electron-side (userData config) — this is a desktop shell
+    // preference, not account data, so it stays out of the sync model.
+    desktopBridge?.setCloseToTray?.(next);
+  }
 
   const currentLocation = (() => {
     try {
@@ -360,6 +389,30 @@ function Settings() {
           )}
         </div>
       </div>
+
+      {desktopBridge && (
+        <div className="settings-section">
+          <div className="settings-section-header">
+            <span className="settings-section-icon" aria-hidden="true">
+              <Icon name="settings" size={17} />
+            </span>
+            <div>
+              <h2>{t("settings.desktop.title", "Desktop")}</h2>
+              <p>{t("settings.desktop.description", "Windows app behavior")}</p>
+            </div>
+          </div>
+          <label className="toggle-row" style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={closeToTray}
+              onChange={toggleCloseToTray}
+            />
+            <span>
+              {t("settings.desktop.closeToTray", "Close to system tray")}
+            </span>
+          </label>
+        </div>
+      )}
 
       <div className="settings-danger">
 

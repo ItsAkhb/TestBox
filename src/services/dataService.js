@@ -41,6 +41,14 @@ import {
   deleteSubject,
   getSubjectById,
 
+  getTags,
+  saveTags,
+  createTag,
+  updateTag,
+  deleteTag,
+  setExamTag,
+  migrateMarkedToTags,
+
   getDirtyState,
   hasPendingLocalChanges,
   clearDirtySection,
@@ -90,6 +98,14 @@ export {
   updateSubject,
   deleteSubject,
   getSubjectById,
+
+  getTags,
+  saveTags,
+  createTag,
+  updateTag,
+  deleteTag,
+  setExamTag,
+  migrateMarkedToTags,
 
   getDirtyState,
   hasPendingLocalChanges,

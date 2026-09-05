@@ -98,6 +98,7 @@ function readDirty() {
             ? dirty.activity
             : {},
         settings: Boolean(dirty.settings),
+        tags: Boolean(dirty.tags),
         deletes: Array.isArray(dirty.deletes) ? dirty.deletes : [],
       }
     : {
@@ -107,6 +108,7 @@ function readDirty() {
         subjects: false,
         activity: {},
         settings: false,
+        tags: false,
         deletes: [],
       };
 }
@@ -153,6 +155,7 @@ function hasDirtyChanges() {
     d.exams ||
     d.subjects ||
     d.settings ||
+    d.tags ||
     Object.keys(d.examData).length > 0 ||
     Object.keys(d.activity).length > 0 ||
     d.deletes.length > 0
@@ -164,7 +167,8 @@ function recordLocalDelete(type, id) {
   markDirty("deletes", { type, id: String(id) });
   // A local delete also dirties the owning collection so the cloud
   // row for any resurrected/renamed entity is refreshed on next upload.
-  markDirty(type === "folder" ? "folders" : "exams", null);
+  const owners = { folder: "folders", exam: "exams", tag: "tags" };
+  markDirty(owners[type] || "folders", null);
 }
 
 export function getDirtyState() {
@@ -315,7 +319,10 @@ function isValidExam(exam) {
       (exam.type === "practice" || exam.type === "exam"))) &&
     (exam.timerDuration === undefined ||
      exam.timerDuration === null ||
-     (typeof exam.timerDuration === "number" && exam.timerDuration > 0))
+     (typeof exam.timerDuration === "number" && exam.timerDuration > 0)) &&
+    (exam.tagIds === undefined ||
+     (Array.isArray(exam.tagIds) &&
+      exam.tagIds.every((id) => isValidId(id))))
   );
 }
 
@@ -866,7 +873,12 @@ export function saveExamData(
 
   if (saved) {
     markDirty("examData", examId);
-    notifyLocalChange();
+    // Cloud→local pulls run under dirty suppression; their writes must
+    // not re-trigger the sync engine (a pull firing the local-change
+    // event would re-arm the sync loop and hammer the cloud forever).
+    if (!suppressDirty) {
+      notifyLocalChange();
+    }
   }
 
   return saved;
@@ -1062,6 +1074,157 @@ export function getSubjectById(subjectId) {
 }
 
 // =========================================================
+// Tags Storage
+// A tag is { id, name, color? }. The exam↔tag relationship lives on
+// the exam object as `tagIds: [tagId, …]` — stable IDs, no separate
+// join records, so exam backup/restore and deletion carry tags along.
+// =========================================================
+
+function getTagsKey() {
+  return `${getStoragePrefix()}tags`;
+}
+
+function isValidTag(tag) {
+  return (
+    isObject(tag) &&
+    isValidId(tag.id) &&
+    typeof tag.name === "string" &&
+    tag.name.trim() !== ""
+  );
+}
+
+export function getTags() {
+  const tags = readJson(getTagsKey(), []);
+  return Array.isArray(tags) ? tags : [];
+}
+
+export function saveTags(tags) {
+  if (!Array.isArray(tags) || !tags.every(isValidTag)) {
+    return false;
+  }
+  const saved = writeJson(getTagsKey(), tags);
+  if (saved && !suppressDirty) {
+    markDirty("tags", null);
+  }
+  return saved;
+}
+
+export function createTag(tag) {
+  if (!isValidTag(tag)) return false;
+  const tags = getTags();
+  if (tags.some((t) => idsEqual(t.id, tag.id))) return false;
+  const saved = saveTags([...tags, tag]);
+  if (saved) notifyLocalChange();
+  return saved;
+}
+
+export function updateTag(tagId, updates) {
+  if (!isValidId(tagId) || !isObject(updates)) return false;
+  const tags = getTags();
+  const index = tags.findIndex((t) => idsEqual(t.id, tagId));
+  if (index === -1) return false;
+  tags[index] = { ...tags[index], ...updates, id: tags[index].id };
+  if (!isValidTag(tags[index])) return false;
+  const saved = saveTags(tags);
+  if (saved) notifyLocalChange();
+  return saved;
+}
+
+// Deleting a tag removes it from every exam's tagIds (assignments are
+// dropped, exams and their data are untouched).
+export function deleteTag(tagId) {
+  if (!isValidId(tagId)) return false;
+
+  const tags = getTags();
+  if (!tags.some((t) => idsEqual(t.id, tagId))) return false;
+
+  const remaining = tags.filter((t) => !idsEqual(t.id, tagId));
+  if (!saveTags(remaining)) return false;
+
+  const exams = getExams();
+  const affected = exams.filter(
+    (e) => Array.isArray(e.tagIds) && e.tagIds.some((id) => idsEqual(id, tagId))
+  );
+  if (affected.length > 0) {
+    saveExams(
+      exams.map((e) =>
+        Array.isArray(e.tagIds) && e.tagIds.some((id) => idsEqual(id, tagId))
+          ? { ...e, tagIds: e.tagIds.filter((id) => !idsEqual(id, tagId)) }
+          : e
+      )
+    );
+  }
+
+  recordLocalDelete("tag", tagId);
+  notifyLocalChange();
+  return true;
+}
+
+// Assign/unassign a tag on an exam; idempotent.
+export function setExamTag(examId, tagId, assigned) {
+  if (!isValidId(examId) || !isValidId(tagId)) return false;
+  const exams = getExams();
+  const index = exams.findIndex((e) => idsEqual(e.id, examId));
+  if (index === -1) return false;
+  const current = Array.isArray(exams[index].tagIds) ? exams[index].tagIds : [];
+  const has = current.some((tid) => idsEqual(tid, tagId));
+  let next;
+  if (assigned && !has) {
+    next = [...current, tagId];
+  } else if (!assigned && has) {
+    next = current.filter((tid) => !idsEqual(tid, tagId));
+  } else {
+    return true;
+  }
+  const updated = [...exams];
+  updated[index] = { ...exams[index], tagIds: next };
+  const saved = saveExams(updated);
+  if (saved) notifyLocalChange();
+  return saved;
+}
+
+// One-time migration: exams with marked questions get a default
+// "marked" tag assigned. The marked question data itself is kept —
+// nothing is deleted. Safe to call repeatedly (marker key prevents
+// re-running; existing tagIds are never touched).
+export function migrateMarkedToTags() {
+  const MIGRATION_KEY = `${getStoragePrefix()}tags-marked-migrated`;
+  if (readJson(MIGRATION_KEY, false) === true) return false;
+
+  const exams = getExams();
+  const withMarked = exams.filter(
+    (e) => {
+      if (Array.isArray(e.tagIds) && e.tagIds.length > 0) return false;
+      const data = readJson(getExamDataKey(e.id), null);
+      return (
+        data &&
+        Array.isArray(data.marked) &&
+        data.marked.length > 0
+      );
+    }
+  );
+
+  if (withMarked.length > 0) {
+    const tags = getTags();
+    let markedTag = tags.find((t) => t.name === "__marked__");
+    if (!markedTag) {
+      markedTag = { id: Date.now(), name: "__marked__" };
+      saveTags([...tags, markedTag]);
+    }
+    saveExams(
+      exams.map((e) =>
+        withMarked.some((m) => idsEqual(m.id, e.id))
+          ? { ...e, tagIds: [...(Array.isArray(e.tagIds) ? e.tagIds : []), markedTag.id] }
+          : e
+      )
+    );
+  }
+
+  writeJson(MIGRATION_KEY, true);
+  return withMarked.length > 0;
+}
+
+// =========================================================
 // Backup
 // =========================================================
 
@@ -1092,6 +1255,7 @@ export function createBackup() {
     exams,
     examData,
     subjects: getSubjects(),
+    tags: getTags(),
   };
 }
 
@@ -1345,6 +1509,14 @@ export function restoreBackup(
       writeJson(getSubjectsKey(), migratedBackup.subjects);
     }
 
+    // Restore tags (optional field — older backups may not have it)
+    if (
+      Array.isArray(migratedBackup.tags) &&
+      migratedBackup.tags.length > 0
+    ) {
+      writeJson(getTagsKey(), migratedBackup.tags);
+    }
+
     // A restore replaces the whole local dataset: every entity is now
     // unsynced and must re-upload on the next sync.
     writeDirty({
@@ -1359,6 +1531,9 @@ export function restoreBackup(
       subjects: true,
       activity: {},
       settings: false,
+      tags: Boolean(
+        Array.isArray(migratedBackup.tags) && migratedBackup.tags.length > 0
+      ),
       deletes: [],
     });
 

@@ -1,11 +1,23 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useSync } from "../../context/SyncContext";
+import { useSession } from "../../context/SessionContext";
 import { useTranslation } from "../../i18n";
 import { useSettings } from "../../context/SettingsContext";
 import { useAuth } from "../../context/AuthContext";
 import { fetchWeather } from "../../services/weather";
 import Icon from "../ui/Icon";
+
+// Pure: seconds → "h:mm:ss" / "mm:ss"
+function formatCountdown(totalSeconds) {
+  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const mm = String(m).padStart(2, "0");
+  const ss = String(sec).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
 
 // WMO weather-code → Icon map name (day/night aware where it matters)
 function weatherIconName(code, isDay) {
@@ -21,9 +33,12 @@ function weatherIconName(code, isDay) {
 
 export default function TopBar() {
   const { syncStatus } = useSync();
+  const { session } = useSession();
   const { t, language, setLanguage, formatDate } = useTranslation();
   const { settings } = useSettings();
   const { user } = useAuth();
+  const location = useLocation();
+  const onExamPage = /^\/exam\/[^/]+\/?$/.test(location.pathname);
 
   const [time, setTime] = useState(() => new Date());
   const [weather, setWeather] = useState(null);
@@ -74,6 +89,24 @@ export default function TopBar() {
           <span className="sync-dot" />
           {syncStatus !== "idle" && <span className="sync-text">{t(`sync.${syncStatus}`)}</span>}
         </span>
+
+        {/* Active exam timer / practice stopwatch — mirrored from the
+            Exam page's own engines; hidden on the exam page itself to
+            avoid a duplicate next to the focusbar timer. */}
+        {session && !onExamPage && (
+          <span
+            className={`topbar-session is-${session.kind} ${session.running === false ? "is-paused" : ""}`}
+            role="timer"
+            title={session.label}
+          >
+            <Icon name={session.kind === "exam" ? "timer" : "play"} size={13} />
+            <span className="topbar-session-time num">
+              {session.kind === "exam"
+                ? formatCountdown(session.remainingSeconds)
+                : formatCountdown(Math.floor(session.elapsedMs / 1000))}
+            </span>
+          </span>
+        )}
 
       </div>
 

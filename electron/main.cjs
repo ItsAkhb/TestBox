@@ -1,10 +1,90 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, Tray, Menu, ipcMain, nativeImage } = require("electron");
 const path = require("path");
+const fs = require("fs");
 
 const DIST_DIR = path.join(__dirname, "..", "dist");
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+const CONFIG_PATH = path.join(app.getPath("userData"), "desktop-config.json");
 
 let mainWindow = null;
+let tray = null;
+let quitRequested = false;
+
+// --- "Close to tray" preference (Electron-side, minimal JSON file) ---
+function readCloseToTray() {
+  try {
+    const raw = fs.readFileSync(CONFIG_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed.closeToTray === true;
+  } catch {
+    return false;
+  }
+}
+
+function writeCloseToTray(enabled) {
+  try {
+    let config = {};
+    try {
+      config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")) || {};
+    } catch {
+      config = {};
+    }
+    config.closeToTray = Boolean(enabled);
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  } catch {
+    // non-fatal: preference stays in-memory for this run
+  }
+}
+
+let closeToTrayEnabled = false;
+
+function trayIconImage() {
+  const iconPath = path.join(__dirname, "assets", "icon.png");
+  if (fs.existsSync(iconPath)) {
+    return nativeImage.createFromPath(iconPath);
+  }
+  return nativeImage.createEmpty();
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray() {
+  if (tray) return;
+  tray = new Tray(trayIconImage());
+  tray.setToolTip("TestBox");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: "Show TestBox",
+        click: () => showMainWindow(),
+      },
+      { type: "separator" },
+      {
+        label: "Quit TestBox",
+        click: () => {
+          quitRequested = true;
+          app.quit();
+        },
+      },
+    ])
+  );
+  tray.on("double-click", () => showMainWindow());
+}
+
+function destroyTray() {
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -18,13 +98,15 @@ function createWindow() {
     backgroundColor: "#FAF8F5",
     webPreferences: {
       // Renderer is the finalized TestBox web UI: no Node integration,
-      // no remote module, context-isolated.
+      // context-isolated. The only bridge is the send-only close-to-tray
+      // toggle in preload.cjs.
       nodeIntegration: false,
       nodeIntegrationInWorker: false,
       contextIsolation: true,
       sandbox: true,
       webviewTag: false,
       spellcheck: false,
+      preload: path.join(__dirname, "preload.cjs"),
     },
   });
 
@@ -37,9 +119,6 @@ function createWindow() {
     return { action: "deny" };
   });
 
-  // No privileged APIs are exposed: no ipcMain.handle listeners exist,
-  // and preload is intentionally omitted.
-
   if (DEV_SERVER_URL) {
     mainWindow.loadURL(DEV_SERVER_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });
@@ -48,12 +127,24 @@ function createWindow() {
     mainWindow.loadFile(path.join(DIST_DIR, "index.html"));
   }
 
+  mainWindow.on("close", (event) => {
+    if (closeToTrayEnabled && !quitRequested) {
+      // Hide to tray instead of quitting; the tray menu can reopen.
+      event.preventDefault();
+      mainWindow.hide();
+      createTray();
+    } else {
+      destroyTray();
+    }
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
 
 app.whenReady().then(() => {
+  closeToTrayEnabled = readCloseToTray();
   createWindow();
 
   app.on("activate", () => {
@@ -68,3 +159,11 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+
+// --- Minimal IPC surface (validated, single-purpose) ---
+ipcMain.on("testbox:set-close-to-tray", (_event, enabled) => {
+  closeToTrayEnabled = Boolean(enabled);
+  writeCloseToTray(closeToTrayEnabled);
+});
+
+ipcMain.handle("testbox:get-close-to-tray", () => closeToTrayEnabled);
