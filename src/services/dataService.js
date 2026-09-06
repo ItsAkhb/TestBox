@@ -53,7 +53,7 @@ import {
   hasPendingLocalChanges,
   clearDirtySection,
   setDirtySuppression,
-} from "./storage";
+} from "./storage.js";
 
 
 export {

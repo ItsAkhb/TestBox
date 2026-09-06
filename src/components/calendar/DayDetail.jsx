@@ -69,6 +69,12 @@ export default function DayDetail({ date, data }) {
           <span className="day-detail-stat-value">{overall.wrong}</span>
           <span className="day-detail-stat-label">{t("exam.wrong")}</span>
         </div>
+        {overall.unresolved > 0 && (
+          <div className="day-detail-stat">
+            <span className="day-detail-stat-value">{overall.unresolved}</span>
+            <span className="day-detail-stat-label">{t("exam.results.unresolved")}</span>
+          </div>
+        )}
         {overall.studySeconds > 0 && (
           <div className="day-detail-stat">
             <span className="day-detail-stat-value num">{formatHMS(overall.studySeconds * 1000)}</span>

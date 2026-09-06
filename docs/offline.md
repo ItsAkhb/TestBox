@@ -60,7 +60,9 @@ work. Per cycle:
 
 - Folders/exams: local rows are never dropped; cloud-only rows are added;
   clean rows adopt cloud values.
-- Exam data: an exam with dirty local data is skipped entirely (kept local,
+- Exam data: per-question rows carry a first-class "unresolved" status
+  (worked-on, no answer) alongside correct/wrong/unanswered; an exam with
+  dirty local data is skipped entirely (kept local,
   uploaded later); otherwise cloud values merge in, restoring
   `answerKey`/`examState` from local when the cloud schema can't carry them.
 - Daily activity merges **per day**: cloud-only days are added; a day that is

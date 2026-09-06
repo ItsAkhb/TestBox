@@ -229,6 +229,7 @@ function ExamContent({ id }) {
     answers,
     correctAnswers,
     marked,
+    unresolved,
     results,
     note,
   } = examData;
@@ -475,6 +476,8 @@ function ExamContent({ id }) {
         correctAnswers,
     marked:
       newMarked = marked,
+    unresolved:
+      newUnresolved = unresolved,
     results:
       newResults = results,
     note:
@@ -497,6 +500,9 @@ function ExamContent({ id }) {
 
       marked:
         newMarked === marked ? base.marked : newMarked,
+
+      unresolved:
+        newUnresolved === unresolved ? base.unresolved : newUnresolved,
 
       results:
         newResults === results ? base.results : newResults,
@@ -539,6 +545,9 @@ function ExamContent({ id }) {
     // interval, and closure state can be stale relative to recent clicks.
     const current = latestExamDataRef.current || examData;
     const currentAnswers = current.answers;
+    const currentUnresolved = Array.isArray(current.unresolved)
+      ? current.unresolved
+      : [];
 
     // Auto-score based on answer key
     let finalStats = null;
@@ -552,6 +561,7 @@ function ExamContent({ id }) {
       let correct = 0;
       let wrong = 0;
       let unanswered = 0;
+      let unresolved = 0;
       let ungraded = 0;
 
       // Score each question; keyless questions stay ungraded
@@ -566,7 +576,15 @@ function ExamContent({ id }) {
         }
 
         if (!userAnswer) {
-          unanswered += 1;
+          // A question the user explicitly marked unresolved counts as
+          // worked-on but is scored as unanswered (no accuracy impact —
+          // it has no correct/incorrect outcome).
+          if (currentUnresolved.includes(questionNumber)) {
+            unresolved += 1;
+            updatedResults[questionNumber] = "unresolved";
+          } else {
+            unanswered += 1;
+          }
         } else if (String(userAnswer) === String(correctAnswer)) {
           updatedResults[questionNumber] = "correct";
           updatedCorrectAnswers[questionNumber] = userAnswer;
@@ -587,8 +605,9 @@ function ExamContent({ id }) {
         correct,
         wrong,
         unanswered,
+        unresolved,
         ungraded,
-        graded: correct + wrong + unanswered,
+        graded: correct + wrong + unanswered + unresolved,
         total: allQuestionNumbers.length,
       };
     }
@@ -721,6 +740,20 @@ function ExamContent({ id }) {
         ...currentCorrectAnswers,
       };
 
+    // Answering normally lifts the unresolved mark: the question now has
+    // an answer (or returns to plain unanswered on deselect).
+    const currentUnresolved = Array.isArray(current.unresolved)
+      ? current.unresolved
+      : [];
+    const wasUnresolved = currentUnresolved.includes(
+      questionNumber
+    );
+    const updatedUnresolved = wasUnresolved
+      ? currentUnresolved.filter(
+          (number) => number !== questionNumber
+        )
+      : currentUnresolved;
+
     // کلیک دوباره روی همان گزینه:
     // تست به حالت «نزده» برمی‌گردد.
     if (
@@ -748,11 +781,14 @@ function ExamContent({ id }) {
 
         correctAnswers:
           updatedCorrectAnswers,
+
+        unresolved:
+          updatedUnresolved,
       });
 
       // Deselect: today's outcome reverts to unanswered (dedup handles tallies)
       if (examMeta) {
-        recordQuestionAnswered(examMeta, questionNumber, "unanswered");
+        recordQuestionAnswered(examMeta, questionNumber, wasUnresolved ? "unanswered" : "unanswered");
       }
 
       return;
@@ -781,6 +817,9 @@ function ExamContent({ id }) {
 
       correctAnswers:
         updatedCorrectAnswers,
+
+      unresolved:
+        updatedUnresolved,
     });
 
     // Record the answer. Exam mode with a key knows the outcome immediately;
@@ -880,6 +919,60 @@ function ExamContent({ id }) {
       marked:
         updatedMarked,
     });
+  }
+
+  // First-class "unresolved" state: the user worked on the question but
+  // could not solve it and does not want to enter an answer. Stored as a
+  // distinct list (never as an option or result value). Marking unresolved
+  // clears any answer/result for the question; answering normally removes
+  // the unresolved mark (handled in selectAnswer).
+  function toggleUnresolved(
+    questionNumber
+  ) {
+    const current = latestExamDataRef.current || examData;
+    const currentUnresolved = Array.isArray(current.unresolved)
+      ? current.unresolved
+      : [];
+
+    const isUnresolved = currentUnresolved.includes(
+      questionNumber
+    );
+
+    if (isUnresolved) {
+      // Remove unresolved: the question returns to unanswered/clean state
+      saveData({
+        unresolved: currentUnresolved.filter(
+          (number) => number !== questionNumber
+        ),
+      });
+
+      if (examMeta) {
+        recordQuestionAnswered(examMeta, questionNumber, "unanswered");
+      }
+
+      return;
+    }
+
+    // Mark unresolved: drop any selected answer, manual result, and
+    // practice correct-answer record — the question has no answer.
+    const updatedAnswers = { ...current.answers };
+    const updatedResults = { ...current.results };
+    const updatedCorrectAnswers = { ...current.correctAnswers };
+
+    delete updatedAnswers[questionNumber];
+    delete updatedResults[questionNumber];
+    delete updatedCorrectAnswers[questionNumber];
+
+    saveData({
+      answers: updatedAnswers,
+      results: updatedResults,
+      correctAnswers: updatedCorrectAnswers,
+      unresolved: [...currentUnresolved, questionNumber],
+    });
+
+    if (examMeta) {
+      recordQuestionAnswered(examMeta, questionNumber, "unresolved");
+    }
   }
 
   function setQuestionResult(
@@ -1128,6 +1221,7 @@ function ExamContent({ id }) {
 
   const safeAnswers = answers || {};
   const safeMarked = Array.isArray(marked) ? marked : [];
+  const unresolvedList = Array.isArray(unresolved) ? unresolved : [];
   const answeredCount = Object.keys(safeAnswers).length;
   const totalCount = questionNumbers.length;
   const unansweredCount = Math.max(totalCount - answeredCount, 0);
@@ -1494,6 +1588,14 @@ function ExamContent({ id }) {
                 questionNumber
               );
 
+            const isUnresolved =
+              Array.isArray(
+                unresolvedList
+              ) &&
+              unresolvedList.includes(
+                questionNumber
+              );
+
             const result =
               results[
                 questionNumber
@@ -1696,6 +1798,36 @@ function ExamContent({ id }) {
 
                 {!isExamMode && (
                   <div className="question-result-actions">
+
+                    <button
+                      type="button"
+                      className={`result-button result-unresolved ${
+                        isUnresolved
+                          ? "selected"
+                          : ""
+                      }`}
+                      aria-label={t("exam.a11y.unresolved", {
+                        q: questionNumber,
+                      })}
+                      aria-pressed={
+                        isUnresolved
+                      }
+                      disabled={
+                        isReviewMode
+                      }
+                      onClick={() =>
+                        toggleUnresolved(
+                          questionNumber
+                        )
+                      }
+                      title={
+                        isUnresolved
+                          ? t("exam.a11y.removeUnresolved")
+                          : t("exam.a11y.unresolved")
+                      }
+                    >
+                      <Icon name="circle" size={15} />
+                    </button>
 
                     <button
                       type="button"

@@ -3,18 +3,18 @@ import {
   saveActivity,
   getFolders,
   getSubjects,
-} from "./dataService";
-import { toLocalDateString, fromLocalDateString, todayLocal } from "../utils/date";
+} from "./dataService.js";
+import { toLocalDateString, fromLocalDateString, todayLocal } from "../utils/date.js";
 
 // =========================================================
 // Daily Activity Model
 //
 // Shape stored under `testbox-activity-YYYY-MM-DD`:
 // {
-//   solved: N, correct: N, wrong: N, unanswered: N,
+//   solved: N, correct: N, wrong: N, unanswered: N, unresolved: N,
 //   studySeconds: N,  // accumulated practice-stopwatch running time (additive)
-//   answeredKeys: { "<examId>:<questionNumber>": true, ... },  // dedup per day
-//   exams: [{ examId, name, folderId, subjectId, solved, correct, wrong, unanswered, completed, studySeconds }]
+//   answeredKeys: { "<examId>:<questionNumber>": outcome, ... },  // dedup per day
+//   exams: [{ examId, name, folderId, subjectId, solved, correct, wrong, unanswered, unresolved, completed, studySeconds }]
 // }
 //
 // `subjects` is derived at read time (getDayReport) from the folder/subject
@@ -32,6 +32,9 @@ function getOrCreateToday() {
     if (!existing.answeredKeys) existing.answeredKeys = {};
     if (!Array.isArray(existing.exams)) existing.exams = [];
     if (!Number.isFinite(Number(existing.studySeconds))) existing.studySeconds = 0;
+    // Legacy day records predate the unresolved tally — backfill it so
+    // applyCount never computes on undefined.
+    if (!Number.isFinite(Number(existing.unresolved))) existing.unresolved = 0;
     return { date: today, data: existing };
   }
   return {
@@ -41,6 +44,7 @@ function getOrCreateToday() {
       correct: 0,
       wrong: 0,
       unanswered: 0,
+      unresolved: 0,
       studySeconds: 0,
       answeredKeys: {},
       exams: [],
@@ -66,6 +70,7 @@ function ensureExamEntry(data, examMeta) {
       correct: 0,
       wrong: 0,
       unanswered: 0,
+      unresolved: 0,
       completed: false,
       studySeconds: 0,
     };
@@ -94,7 +99,7 @@ function applyCount(data, examEntry, field) {
  *
  * examMeta: { examId, examName, folderId, subjectId }
  * questionNumber: number
- * outcome: "correct" | "wrong" | "unanswered"
+ * outcome: "correct" | "wrong" | "unanswered" | "unresolved"
  */
 export function recordQuestionAnswered(examMeta, questionNumber, outcome) {
   if (!examMeta || examMeta.examId == null) return;
@@ -134,6 +139,9 @@ export function recordQuestionAnswered(examMeta, questionNumber, outcome) {
     } else if (previousOutcome === "wrong") {
       data.wrong = Math.max(0, data.wrong - 1);
       examEntry.wrong = Math.max(0, examEntry.wrong - 1);
+    } else if (previousOutcome === "unresolved") {
+      data.unresolved = Math.max(0, (data.unresolved || 0) - 1);
+      examEntry.unresolved = Math.max(0, (examEntry.unresolved || 0) - 1);
     } else {
       data.unanswered = Math.max(0, data.unanswered - 1);
       examEntry.unanswered = Math.max(0, examEntry.unanswered - 1);
@@ -145,6 +153,10 @@ export function recordQuestionAnswered(examMeta, questionNumber, outcome) {
     applyCount(data, examEntry, "correct");
   } else if (outcome === "wrong") {
     applyCount(data, examEntry, "wrong");
+  } else if (outcome === "unresolved") {
+    // Unresolved counts toward solved (worked-on) but never toward
+    // correct/wrong — it neither raises nor distorts accuracy.
+    applyCount(data, examEntry, "unresolved");
   } else {
     applyCount(data, examEntry, "unanswered");
   }
@@ -176,6 +188,7 @@ export function recordExamCompleted(examMeta, stats) {
     correct: examEntry.correct || 0,
     wrong: examEntry.wrong || 0,
     unanswered: examEntry.unanswered || 0,
+    unresolved: examEntry.unresolved || 0,
   };
 
   const ungraded = Number(stats.ungraded) || 0;
@@ -189,6 +202,7 @@ export function recordExamCompleted(examMeta, stats) {
     correct: Number(stats.correct) || 0,
     wrong: Number(stats.wrong) || 0,
     unanswered: Number(stats.unanswered) || 0,
+    unresolved: Number(stats.unresolved) || 0,
   };
 
   // Roll back the exam's previous contribution, then apply final stats
@@ -199,11 +213,16 @@ export function recordExamCompleted(examMeta, stats) {
     0,
     (data.unanswered || 0) - prev.unanswered + next.unanswered
   );
+  data.unresolved = Math.max(
+    0,
+    (data.unresolved || 0) - (prev.unresolved || 0) + next.unresolved
+  );
 
   examEntry.solved = next.solved;
   examEntry.correct = next.correct;
   examEntry.wrong = next.wrong;
   examEntry.unanswered = next.unanswered;
+  examEntry.unresolved = next.unresolved;
   examEntry.completed = true;
 
   saveActivity(date, data);
@@ -257,6 +276,7 @@ export function getDayReport(dateStr) {
     correct: raw.correct || 0,
     wrong: raw.wrong || 0,
     unanswered: raw.unanswered || 0,
+    unresolved: raw.unresolved || 0,
     studySeconds: raw.studySeconds || 0,
     accuracy:
       raw.solved > 0 ? Math.round((raw.correct / raw.solved) * 100) : 0,
@@ -341,6 +361,7 @@ export function getDayReport(dateStr) {
       correct: exam.correct || 0,
       wrong: exam.wrong || 0,
       unanswered: exam.unanswered || 0,
+      unresolved: exam.unresolved || 0,
       studySeconds: exam.studySeconds || 0,
       completed: !!exam.completed,
     });
@@ -414,6 +435,7 @@ export function getActivityForDateRange(startDate, endDate) {
       solved: activity?.solved || 0,
       correct: activity?.correct || 0,
       wrong: activity?.wrong || 0,
+      unresolved: activity?.unresolved || 0,
       studySeconds: activity?.studySeconds || 0,
       accuracy:
         activity && activity.solved > 0
@@ -436,6 +458,7 @@ export function getMonthlySummary(year, month) {
   const totalSolved = activeDays.reduce((sum, d) => sum + d.solved, 0);
   const totalCorrect = activeDays.reduce((sum, d) => sum + d.correct, 0);
   const totalWrong = activeDays.reduce((sum, d) => sum + d.wrong, 0);
+  const totalUnresolved = days.reduce((sum, d) => sum + (d.unresolved || 0), 0);
   // Study time sums over ALL days in range (a timing-only day with zero
   // solved still counts); active-day/streak semantics are unchanged.
   const totalStudySeconds = days.reduce((sum, d) => sum + (d.studySeconds || 0), 0);
@@ -444,6 +467,7 @@ export function getMonthlySummary(year, month) {
     totalSolved,
     totalCorrect,
     totalWrong,
+    totalUnresolved,
     totalStudySeconds,
     activeDays: activeDays.length,
     accuracy:

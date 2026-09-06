@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { supabase } from "../services/supabaseClient";
+import { supabase, markUserInitiatedSignOut } from "../services/supabaseClient";
 import { useAuth } from "../context/AuthContext";
 
 import {
@@ -28,6 +28,10 @@ function Account() {
 
   async function handleLogout() {
     setLoading(true);
+
+    // Flag BEFORE calling signOut so AuthContext can tell this
+    // user-initiated sign-out from an offline token-refresh failure.
+    markUserInitiatedSignOut();
 
     const { error } =
       await supabase.auth.signOut();

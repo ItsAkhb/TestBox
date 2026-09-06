@@ -39,6 +39,10 @@ function Folders() {
   const [filterSubject, setFilterSubject] =
     useState("all");
 
+  const [renamingFolder, setRenamingFolder] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [showRenameModal, setShowRenameModal] = useState(false);
+
   function refreshFolders() {
     setFolders(getFolders());
     setSubjects(getSubjects());
@@ -99,22 +103,33 @@ function Folders() {
   }
 
   function handleRenameFolder(folder) {
-    const newName = prompt(
-      t("folders.rename.prompt"),
-      folder.name
-    );
+    // Modal instead of window.prompt: prompt() is not supported in
+    // Electron (throws) and blocks IME input on some WebViews — the
+    // rename dialog must accept Persian/English text everywhere.
+    setRenamingFolder(folder);
+    setRenameValue(folder.name);
+    setShowRenameModal(true);
+  }
 
-    if (!newName?.trim()) {
+  function handleRenameSubmit() {
+    const newName = renameValue.trim();
+
+    if (!newName || !renamingFolder) {
+      setShowRenameModal(false);
+      setRenamingFolder(null);
       return;
     }
 
     const updated =
       updateFolder(
-        folder.id,
+        renamingFolder.id,
         {
-          name: newName.trim(),
+          name: newName,
         }
       );
+
+    setShowRenameModal(false);
+    setRenamingFolder(null);
 
     if (!updated) {
       showToast(
@@ -379,6 +394,48 @@ function Folders() {
         </div>
 
       )}
+
+      <Modal
+        open={showRenameModal}
+        onClose={() => {
+          setShowRenameModal(false);
+          setRenamingFolder(null);
+        }}
+        title={t("folders.rename.title")}
+      >
+        <label className="modal-label">
+          {t("folders.create.nameLabel")}
+        </label>
+
+        <input
+          className="input-field"
+          value={renameValue}
+          onChange={(event) => setRenameValue(event.target.value)}
+          placeholder={t("folders.create.namePlaceholder")}
+          autoFocus
+        />
+
+        <div className="modal-buttons">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => {
+              setShowRenameModal(false);
+              setRenamingFolder(null);
+            }}
+          >
+            {t("folders.create.cancel")}
+          </button>
+
+          <button
+            type="button"
+            className="primary-button"
+            onClick={handleRenameSubmit}
+          >
+            {t("common.save")}
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         open={showModal}

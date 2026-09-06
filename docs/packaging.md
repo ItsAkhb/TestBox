@@ -1,11 +1,11 @@
 # Packaging: Windows (Electron) & Android (Capacitor)
 
-TestBox v2.0.0 ships three ways from one codebase:
+TestBox v2.1.0 ships three ways from one codebase:
 
 | Platform | Wrapper | Output | Config |
 |---|---|---|---|
 | Web | none (Vite static site) | `dist/` → GitHub Pages | `vite.config.js` |
-| Windows | Electron 44 | `release/TestBox-Setup-2.0.0.exe`, `release/TestBox-Portable-2.0.0.exe` | `electron-builder.json5` |
+| Windows | Electron 44 | `release/TestBox-Setup-2.1.0.exe`, `release/TestBox-Portable-2.1.0.exe` | `electron-builder.json5` |
 | Android | Capacitor 7 | `android/app/build/outputs/apk/release/app-release.apk` | `capacitor.config.json` |
 
 ## Rationale
@@ -40,9 +40,9 @@ npm run dist:win       # build:packaged + electron-builder --win
 
 Outputs in `release/` (gitignored):
 
-- `TestBox-Setup-2.0.0.exe` — NSIS installer x64 (user-chosen install dir,
+- `TestBox-Setup-2.1.0.exe` — NSIS installer x64 (user-chosen install dir,
   desktop + Start-menu shortcuts)
-- `TestBox-Portable-2.0.0.exe` — standalone portable x64
+- `TestBox-Portable-2.1.0.exe` — standalone portable x64
 
 Details:
 
@@ -115,3 +115,50 @@ Output: `android/app/build/outputs/apk/release/app-release.apk`.
   (`subjects`, `daily_activity`, `user_settings`, `folders.subject_id`, …)
   don't exist in the live Supabase schema yet. Local data is fully preserved;
   see `docs/offline.md` and the migration SQL in `PROJECT_STATE.md`.
+
+## Supabase schema migration (full cross-device sync)
+
+Run in Supabase → SQL Editor. The app probes capabilities on load; each
+piece activates automatically once present:
+
+```sql
+alter table folders add column if not exists subject_id text;
+alter table exams add column if not exists type text default 'practice';
+alter table exams add column if not exists timer_duration int;
+alter table exams add column if not exists answer_key jsonb;
+alter table exams add column if not exists exam_state jsonb;
+alter table exams add column if not exists stopwatch_enabled boolean default false;
+alter table exams add column if not exists tag_ids jsonb default '[]'::jsonb;
+
+create table if not exists subjects (
+  id bigint primary key, user_id uuid not null, name text not null,
+  color text, updated_at timestamptz default now()
+);
+create table if not exists daily_activity (
+  user_id uuid not null, date date not null, payload jsonb not null,
+  updated_at timestamptz default now(), primary key (user_id, date)
+);
+create table if not exists user_settings (
+  user_id uuid primary key, settings jsonb not null,
+  updated_at timestamptz default now()
+);
+create table if not exists tags (
+  id bigint primary key, user_id uuid not null, name text not null,
+  color text, updated_at timestamptz default now()
+);
+
+-- Allow the first-class "unresolved" question status
+alter table exam_questions drop constraint if exists exam_questions_status_check;
+alter table exam_questions add constraint exam_questions_status_check
+  check (status in ('correct','wrong','unanswered','unresolved'));
+
+alter table subjects enable row level security;
+alter table daily_activity enable row level security;
+alter table user_settings enable row level security;
+alter table tags enable row level security;
+
+create policy "own subjects" on subjects for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "own activity" on daily_activity for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "own settings" on user_settings for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "own tags" on tags for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+```

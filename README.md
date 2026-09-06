@@ -12,6 +12,8 @@ Organize exams into folders and subjects, solve practice sheets with a built-in 
 * Per-question answer key editor with custom numbering and partial keys
 * Exam lifecycle: start → timer → auto-finish → score report → retake
 * **Practice stopwatch** — measures real study time (pause-aware), feeds daily reports and monthly totals
+* **Tags (برچسب‌ها)** — organize exams with tags (create/rename/delete/assign), fully synced
+* **Unresolved questions (حل‌نشده)** — mark questions you worked on but couldn't solve; tracked in reports without distorting accuracy
 * Marked questions for review across all exams
 
 ### Insights
@@ -109,7 +111,7 @@ Never commit environment files or private keys to the repository.
 
 ## Current Status
 
-**v2.0.0 released.**
+**v2.1.0 released.**
 
 Implemented:
 

@@ -109,6 +109,10 @@ function Folder() {
   const [showModal, setShowModal] =
     useState(false);
 
+  const [moveExamState, setMoveExamState] = useState(null);
+  const [moveTargetId, setMoveTargetId] = useState("");
+  const [showMoveModal, setShowMoveModal] = useState(false);
+
   const [editingExam, setEditingExam] =
     useState(null);
 
@@ -577,52 +581,39 @@ function Folder() {
       return;
     }
 
-    const choices =
-      otherFolders
-        .map(
-          (folder, index) =>
-            `${index + 1}. ${folder.name}`
-        )
-        .join("\n");
+    // Modal instead of window.prompt: prompt() is unsupported in
+    // Electron and IME-hostile on some WebViews. A select keeps the
+    // pick reliable and fully translated.
+    setMoveExamState(exam);
+    setShowMoveModal(true);
+  }
 
-    const answer =
-      prompt(
-        `${t("exam.move.prompt")}\n\n${choices}\n\n${t("exam.move.selectNumber")}`
-      );
+  function handleMoveSubmit() {
+    const otherFolders = folders.filter(
+      (item) => String(item.id) !== String(id)
+    );
+    const targetFolder = otherFolders.find(
+      (f) => String(f.id) === String(moveTargetId)
+    );
+    const examToMove = moveExamState;
 
-    if (!answer) {
+    setShowMoveModal(false);
+    setMoveExamState(null);
+    setMoveTargetId("");
+
+    if (!examToMove) {
       return;
     }
 
-    const index =
-      Number(answer) - 1;
-
-    if (
-      index < 0 ||
-      index >=
-        otherFolders.length
-    ) {
-      showToast(
-        t("exam.move.invalid"),
-        "warning"
-      );
+    if (!targetFolder) {
+      showToast(t("exam.move.invalid"), "warning");
       return;
     }
 
-    const targetFolder =
-      otherFolders[index];
-
-    const moved =
-      moveExam(
-        exam.id,
-        targetFolder.id
-      );
+    const moved = moveExam(examToMove.id, targetFolder.id);
 
     if (!moved) {
-      showToast(
-        t("exam.move.failed"),
-        "error"
-      );
+      showToast(t("exam.move.failed"), "error");
       return;
     }
 
@@ -850,6 +841,57 @@ function Folder() {
         </div>
 
       )}
+
+      <Modal
+        open={showMoveModal}
+        onClose={() => {
+          setShowMoveModal(false);
+          setMoveExamState(null);
+        }}
+        title={t("exam.move.prompt")}
+        size="sm"
+      >
+        <label className="modal-label">
+          {moveExamState?.name}
+        </label>
+
+        <select
+          className="modal-select"
+          value={moveTargetId}
+          onChange={(event) => setMoveTargetId(event.target.value)}
+          autoFocus
+        >
+          <option value="">{t("exam.move.selectFolder")}</option>
+          {folders
+            .filter((item) => String(item.id) !== String(id))
+            .map((folder) => (
+              <option key={folder.id} value={String(folder.id)}>
+                {folder.name}
+              </option>
+            ))}
+        </select>
+
+        <div className="modal-buttons">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => {
+              setShowMoveModal(false);
+              setMoveExamState(null);
+            }}
+          >
+            {t("exam.cancel")}
+          </button>
+
+          <button
+            type="button"
+            className="primary-button"
+            onClick={handleMoveSubmit}
+          >
+            {t("exam.move.confirm")}
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         open={showModal}

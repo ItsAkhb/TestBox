@@ -63,6 +63,17 @@ export default function MonthSummary({ stats, streak = 0 }) {
             </span>
           </div>
         )}
+        {stats.totalUnresolved > 0 && (
+          <div className="month-summary-stat">
+            <span className="month-summary-stat-icon" aria-hidden="true">
+              <Icon name="circle" size={17} />
+            </span>
+            <span className="month-summary-stat-text">
+              <span className="month-summary-stat-value">{stats.totalUnresolved}</span>
+              <span className="month-summary-stat-label">{t("exam.results.unresolved")}</span>
+            </span>
+          </div>
+        )}
       </div>
 
       {stats.totalCorrect > 0 && (

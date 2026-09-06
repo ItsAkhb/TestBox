@@ -1632,3 +1632,15 @@ body[data-exam-mode="exam"] .focusbar-progress {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ---------- Unresolved question state (worked-on, no answer) ---------- */
+
+.result-unresolved.selected {
+  background: var(--warning);
+  border-color: var(--warning);
+  color: #fff;
+}
+
+:root[data-theme="dark"] .result-unresolved.selected {
+  color: var(--warning-soft);
+}

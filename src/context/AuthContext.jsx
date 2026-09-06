@@ -5,7 +5,7 @@ import {
   useState,
 } from "react";
 
-import { supabase } from "../services/supabaseClient";
+import { supabase, consumeUserInitiatedSignOut } from "../services/supabaseClient";
 
 import {
   setStorageUser,
@@ -163,22 +163,39 @@ export function AuthProvider({
       supabase.auth.onAuthStateChange(
         (event, newSession) => {
 
-          // OFFLINE AUTH GUARD: a TOKEN_REFRESHED with no session, or
-          // a SIGNED_OUT event that fires purely because a network
-          // refresh failed, must not flip the storage namespace to
-          // anonymous — that would hide the user's local data while
-          // offline. Only a real SIGNED_OUT (user action) or an
-          // explicit invalid-session event clears the cached identity.
-          const offlineNow =
-            !networkOnline || supabaseReachable === false;
+          // OFFLINE AUTH GUARD (v2 hardening):
+          //
+          // Supabase emits SIGNED_OUT (and TOKEN_REFRESHED with no
+          // session) when an automatic token refresh fails — which
+          // happens whenever the app starts without internet, or the
+          // network drops behind a "connected" gateway where
+          // navigator.onLine is still true. Wiping the identity then
+          // would flip storage to the anonymous namespace and make the
+          // user's local data appear to vanish.
+          //
+          // A SIGNED_OUT may only clear the identity when OUR code
+          // requested it (consumeUserInitiatedSignOut() returns true).
+          // Every other session-less event keeps the cached identity;
+          // cloud sync is gated separately on real connectivity.
+          //
+          // This is not a security weakening: the session token itself
+          // stays managed by supabase-js (invalid tokens simply fail
+          // server-side when used). We only preserve WHO the user is
+          // locally so their data stays visible offline.
+          if (!newSession && event === "SIGNED_OUT") {
+            if (consumeUserInitiatedSignOut()) {
+              writeLastUserId(null);
+              setStorageUser(null);
+              setSession(null);
+              return;
+            }
+            // Not user-initiated (offline refresh failure or unknown):
+            // keep identity and any cached session data.
+            return;
+          }
 
-          if (
-            !newSession &&
-            offlineNow &&
-            (event === "TOKEN_REFRESHED" || event === "SIGNED_OUT")
-          ) {
-            // Keep the cached user id for local data access; sync is
-            // gated separately on connectivity.
+          if (!newSession && event === "TOKEN_REFRESHED") {
+            // Refresh failed silently — keep identity.
             return;
           }
 
@@ -197,10 +214,6 @@ export function AuthProvider({
 
           if (nextUserId) {
             writeLastUserId(nextUserId);
-          } else if (event === "SIGNED_OUT" && !offlineNow) {
-            // Genuine signed-out while online: forget the identity.
-            writeLastUserId(null);
-            setStorageUser(null);
           }
         }
       );

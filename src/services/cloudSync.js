@@ -193,11 +193,18 @@ function buildQuestionRows(
           questionNumber
         );
 
+      const isUnresolved =
+        Array.isArray(data.unresolved) &&
+        data.unresolved.includes(
+          questionNumber
+        );
+
       const hasData =
         selectedAnswer ||
         correctAnswer ||
         result ||
-        isMarked;
+        isMarked ||
+        isUnresolved;
 
       if (!hasData) {
         return;
@@ -221,7 +228,9 @@ function buildQuestionRows(
           result === "correct" ||
           result === "wrong"
             ? result
-            : "unanswered",
+            : isUnresolved
+              ? "unresolved"
+              : "unanswered",
 
         correct_answer:
           correctAnswer
@@ -483,9 +492,6 @@ async function syncExam(
         Boolean(exam.stopwatchEnabled);
     }
   }
-  if (schemaCapabilities.examsTagIds && Array.isArray(exam.tagIds)) {
-    row.tag_ids = exam.tagIds.map(String);
-  }
   if (schemaCapabilities.examsAnswerKey && data.answerKey) {
     row.answer_key = data.answerKey;
   }
@@ -665,6 +671,12 @@ export async function syncLocalToCloud(
     syncSettings(userId, dirtyState.settings),
     syncTags(userId, dirtyState.tags),
   ]);
+
+  // Tag assignments ride on the full exam row pushed by syncExam — a
+  // partial upsert (tag_ids only) would fail the exams UPDATE policy's
+  // folder-existence WITH CHECK because folder_id would be missing.
+  // syncExam already includes tag_ids when the column exists; nothing
+  // extra to push here.
 
   return {
     folders:
@@ -1112,6 +1124,7 @@ function buildLocalExamData(
   const answers = {};
   const correctAnswers = {};
   const marked = [];
+  const unresolved = [];
   const results = {};
 
   questions.forEach(
@@ -1159,6 +1172,16 @@ function buildLocalExamData(
           questionNumber
         ] = question.status;
       }
+
+      // First-class unresolved state (worked-on, no answer given)
+      if (
+        question.status ===
+          "unresolved"
+      ) {
+        unresolved.push(
+          questionNumber
+        );
+      }
     }
   );
 
@@ -1168,6 +1191,8 @@ function buildLocalExamData(
     correctAnswers,
 
     marked,
+
+    unresolved,
 
     results,
 

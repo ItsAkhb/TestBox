@@ -36,9 +36,12 @@ export default function ExamResults() {
     const questionNumbers = getQuestionNumbers(exam);
 
     if (hasAnswerKey) {
-      // Auto-scoring: key-covered questions are graded; the rest are ungraded
+      // Auto-scoring: key-covered questions are graded; the rest are ungraded.
+      // Persisted results carry the unresolved distinction (a no-answer
+      // question the user explicitly marked unresolved).
       return autoScore(examData.answers || {}, answerKey, exam.negativeMarking !== false, {
         questionNumbers,
+        results: examData.results || {},
       });
     }
 
@@ -63,7 +66,7 @@ export default function ExamResults() {
       ? Math.max(0, Math.round(((correct * 3 - wrong) / (questionCount * 3)) * 100 * 10) / 10)
       : questionCount > 0 ? Math.round((correct / questionCount) * 100 * 10) / 10 : 0;
 
-    return { correct, wrong, unanswered, ungraded: 0, graded: questionCount, totalQuestions: questionCount, percentage, details };
+    return { correct, wrong, unanswered, unresolved: 0, ungraded: 0, graded: questionCount, totalQuestions: questionCount, percentage, details };
   }, [exam, examData]);
 
   if (!exam || !results) {
@@ -114,6 +117,7 @@ export default function ExamResults() {
       correctAnswers: {},
       results: {},
       marked: [],
+      unresolved: [],
       examState: null,
     });
     // Clear timer persistence
@@ -127,6 +131,9 @@ export default function ExamResults() {
     { id: "correct", value: results.correct, label: t("exam.results.correctAnswers") },
     { id: "wrong", value: results.wrong, label: t("exam.results.wrongAnswers") },
     { id: "unanswered", value: results.unanswered, label: t("exam.results.unanswered") },
+    ...(results.unresolved > 0
+      ? [{ id: "unresolved", value: results.unresolved, label: t("exam.results.unresolved") }]
+      : []),
     ...(results.ungraded > 0
       ? [{ id: "ungraded", value: results.ungraded, label: t("exam.results.ungraded") }]
       : []),
@@ -150,6 +157,7 @@ export default function ExamResults() {
     correct: "✓",
     wrong: "✕",
     unanswered: "—",
+    unresolved: "◌",
     ungraded: "?",
   };
 

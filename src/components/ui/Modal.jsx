@@ -6,18 +6,10 @@ import Icon from "./Icon";
 export default function Modal({ open, onClose, title, subtitle, size = "md", children }) {
   const modalRef = useRef(null);
   const previousFocus = useRef(null);
-  // Each open cycle gets a fresh key: re-opening while a previous
-  // instance's exit animation is still running must not reuse the same
-  // AnimatePresence child key, or the exiting element never completes
-  // and a pointer-events: auto ghost overlay blocks the whole page.
-  // The counter advances only on the closed→open transition — not on
-  // every open render (keystrokes would otherwise remount the modal).
-  const openCountRef = useRef(0);
-  const wasOpenRef = useRef(false);
-  if (open && !wasOpenRef.current) {
-    openCountRef.current += 1;
-  }
-  wasOpenRef.current = open;
+  // Note: neither motion child declares an exit animation, so AnimatePresence
+  // unmounts the overlay as soon as `open` flips false — an interrupted exit
+  // can never leave a pointer-events: auto ghost blocking the page (the bug
+  // that used to make everything unclickable until reload).
 
   useEffect(() => {
     if (open) {
@@ -75,7 +67,6 @@ export default function Modal({ open, onClose, title, subtitle, size = "md", chi
     <AnimatePresence>
       {open && (
         <motion.div
-          key={`modal-${openCountRef.current}`}
           className="modal-overlay"
           onClick={onClose}
           role="dialog"

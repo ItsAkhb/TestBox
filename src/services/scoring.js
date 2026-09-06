@@ -64,14 +64,18 @@ export function computeFormQuestionNumbers({ customNumbering, questionCount, sta
  * options.questionNumbers: authoritative list of ALL exam question numbers.
  *                          Falls back to key-covered questions only when not
  *                          provided (legacy callers) — prefer passing it.
+ * options.results: persisted per-question results (from the finish flow).
+ *                  A question with result "unresolved" is reported as
+ *                  unresolved — worked-on but scored as unanswered (it has
+ *                  no answer, so accuracy is unaffected).
  *
  * Result shape:
  *   totalQuestions — full exam size
- *   graded         — questions with a key entry (correct+wrong+unanswered)
+ *   graded         — questions with a key entry (correct+wrong+unanswered+unresolved)
  *   ungraded       — questions without a key entry (totalQuestions - graded)
- *   correct/wrong/unanswered — graded questions only
+ *   correct/wrong/unanswered/unresolved — graded questions only
  *   percentage     — computed over totalQuestions (the whole exam)
- *   details        — per-question: correct | wrong | unanswered | ungraded
+ *   details        — per-question: correct | wrong | unanswered | unresolved | ungraded
  */
 export function autoScore(answers, answerKey, negativeMarking = true, options = {}) {
   const allNumbers =
@@ -79,9 +83,13 @@ export function autoScore(answers, answerKey, negativeMarking = true, options = 
       ? options.questionNumbers
       : Object.keys(answerKey).map(Number).sort((a, b) => a - b);
 
+  const persistedResults =
+    options.results && typeof options.results === "object" ? options.results : null;
+
   let correct = 0;
   let wrong = 0;
   let unanswered = 0;
+  let unresolved = 0;
   let ungraded = 0;
 
   const details = {};
@@ -98,8 +106,13 @@ export function autoScore(answers, answerKey, negativeMarking = true, options = 
     }
 
     if (!userAnswer) {
-      unanswered += 1;
-      details[qNum] = "unanswered";
+      if (persistedResults && persistedResults[qNum] === "unresolved") {
+        unresolved += 1;
+        details[qNum] = "unresolved";
+      } else {
+        unanswered += 1;
+        details[qNum] = "unanswered";
+      }
     } else if (String(userAnswer) === String(correctAnswer)) {
       correct += 1;
       details[qNum] = "correct";
@@ -110,7 +123,7 @@ export function autoScore(answers, answerKey, negativeMarking = true, options = 
   }
 
   const totalQuestions = allNumbers.length;
-  const graded = correct + wrong + unanswered;
+  const graded = correct + wrong + unanswered + unresolved;
 
   const percentage = calculatePercentage(
     correct,
@@ -123,6 +136,7 @@ export function autoScore(answers, answerKey, negativeMarking = true, options = 
     correct,
     wrong,
     unanswered,
+    unresolved,
     ungraded,
     graded,
     totalQuestions,

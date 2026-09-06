@@ -187,6 +187,7 @@ const DEFAULT_EXAM_DATA = {
   answers: {},
   correctAnswers: {},
   marked: [],
+  unresolved: [],
   results: {},
   note: "",
   answerKey: {},
@@ -202,6 +203,7 @@ function createDefaultExamData() {
     answers: {},
     correctAnswers: {},
     marked: [],
+    unresolved: [],
     results: {},
     note: "",
   };
@@ -363,6 +365,11 @@ function normalizeExamData(data) {
     marked:
       Array.isArray(data.marked)
         ? data.marked
+        : [],
+
+    unresolved:
+      Array.isArray(data.unresolved)
+        ? data.unresolved
         : [],
 
     results:
