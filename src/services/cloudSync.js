@@ -43,6 +43,7 @@ const schemaCapabilities = {
   settingsTable: false,
   tagsTable: false,
   examsTagIds: false,
+  examQuestionsTagIds: false,
 };
 
 // Whether this page session has completed at least one cloud→local
@@ -90,6 +91,7 @@ export async function probeSchemaCapabilities() {
     settingsTable,
     tagsTable,
     examsTagIds,
+    examQuestionsTagIds,
   ] = await Promise.all([
     columnExists("folders", "subject_id"),
     columnExists("exams", "type"),
@@ -101,6 +103,7 @@ export async function probeSchemaCapabilities() {
     tableExists("user_settings"),
     tableExists("tags"),
     columnExists("exams", "tag_ids"),
+    columnExists("exam_questions", "tag_ids"),
   ]);
 
   schemaCapabilities.foldersSubjectId = foldersSubjectId;
@@ -113,6 +116,7 @@ export async function probeSchemaCapabilities() {
   schemaCapabilities.settingsTable = settingsTable;
   schemaCapabilities.tagsTable = tagsTable;
   schemaCapabilities.examsTagIds = examsTagIds;
+  schemaCapabilities.examQuestionsTagIds = examQuestionsTagIds;
   schemaCapabilities.probed = true;
 
   return schemaCapabilities;
@@ -199,12 +203,19 @@ function buildQuestionRows(
           questionNumber
         );
 
+      const questionTagIds = Array.isArray(
+        data.questionTags?.[String(questionNumber)]
+      )
+        ? data.questionTags[String(questionNumber)].map(String)
+        : [];
+
       const hasData =
         selectedAnswer ||
         correctAnswer ||
         result ||
         isMarked ||
-        isUnresolved;
+        isUnresolved ||
+        questionTagIds.length > 0;
 
       if (!hasData) {
         return;
@@ -242,6 +253,8 @@ function buildQuestionRows(
         marked: Boolean(
           isMarked
         ),
+
+        tag_ids: questionTagIds,
 
         updated_at:
           new Date().toISOString(),
@@ -1033,7 +1046,8 @@ async function getCloudQuestionsForExam(
         selected_answer,
         status,
         correct_answer,
-        marked
+        marked,
+        tag_ids
       `
     )
     .eq(
@@ -1125,6 +1139,7 @@ function buildLocalExamData(
   const correctAnswers = {};
   const marked = [];
   const unresolved = [];
+  const questionTags = {};
   const results = {};
 
   questions.forEach(
@@ -1162,6 +1177,15 @@ function buildLocalExamData(
         );
       }
 
+      // Question-level tags (v2.1.1)
+      if (
+        schemaCapabilities.examQuestionsTagIds &&
+        Array.isArray(question.tag_ids) &&
+        question.tag_ids.length > 0
+      ) {
+        questionTags[questionNumber] = question.tag_ids.map(String);
+      }
+
       if (
         question.status ===
           "correct" ||
@@ -1193,6 +1217,8 @@ function buildLocalExamData(
     marked,
 
     unresolved,
+
+    questionTags,
 
     results,
 

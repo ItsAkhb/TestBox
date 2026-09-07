@@ -197,7 +197,7 @@ function Settings() {
         );
 
         setTimeout(() => {
-          window.location.href = "/";
+          window.location.hash = "#/";
         }, 1000);
       } catch (error) {
         console.error(
@@ -254,7 +254,7 @@ function Settings() {
       return;
     }
 
-    window.location.href = "/";
+    window.location.hash = "#/";
   }
 
   return (

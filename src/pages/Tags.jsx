@@ -9,11 +9,12 @@ import { Link, useLocation } from "react-router-dom";
 import {
   getExams,
   getFolders,
+  getExamData,
   getTags,
   createTag,
   updateTag,
   deleteTag,
-  setExamTag,
+  setQuestionTag,
   migrateMarkedToTags,
 } from "../services/dataService";
 import { useTranslation } from "../i18n";
@@ -28,42 +29,40 @@ const TAG_COLORS = [
   "#7c3aed", "#0891b2", "#db2777", "#65a30d",
 ];
 
-function examMatchesTag(exam, tagId) {
-  return (
-    Array.isArray(exam.tagIds) &&
-    exam.tagIds.some((id) => String(id) === String(tagId))
-  );
-}
+// Every tagged question of every exam, flattened for the browser list.
+function buildTaggedQuestions(exams, folders, activeTagId, tags) {
+  const entries = [];
 
-function buildExamGroups(exams, folders, activeTagId, tags) {
-  const visible = activeTagId
-    ? exams.filter((exam) => examMatchesTag(exam, activeTagId))
-    : exams.filter(
-        (exam) => Array.isArray(exam.tagIds) && exam.tagIds.length > 0
-      );
+  exams.forEach((exam) => {
+    const data = getExamData(exam.id);
+    const map = data?.questionTags;
+    if (!map || typeof map !== "object") return;
 
-  const grouped = visible.map((exam) => {
     const folder = folders.find(
       (item) => String(item.id) === String(exam.folderId)
     );
-    const examTags = (exam.tagIds || [])
-      .map(
-        (id) => tags.find((t) => String(t.id) === String(id))
-      )
-      .filter(Boolean);
 
-    return {
-      examId: exam.id,
-      examName: exam.name,
-      folderId: exam.folderId,
-      folderName: folder?.name || "",
-      tagIds: Array.isArray(exam.tagIds) ? [...exam.tagIds] : [],
-      examTags,
-      createdAt: exam.createdAt,
-    };
+    Object.entries(map).forEach(([qNum, tagIds]) => {
+      if (!Array.isArray(tagIds) || tagIds.length === 0) return;
+      if (activeTagId && !tagIds.some((id) => String(id) === String(activeTagId))) {
+        return;
+      }
+      const questionTagObjects = tagIds
+        .map((id) => tags.find((t) => String(t.id) === String(id)))
+        .filter(Boolean);
+
+      entries.push({
+        examId: exam.id,
+        examName: exam.name,
+        folderName: folder?.name || "",
+        questionNumber: qNum,
+        tags: questionTagObjects,
+        createdAt: exam.createdAt,
+      });
+    });
   });
 
-  return grouped.sort((a, b) => {
+  return entries.sort((a, b) => {
     const aTime = Date.parse(a.createdAt);
     const bTime = Date.parse(b.createdAt);
     if (Number.isFinite(aTime) && Number.isFinite(bTime)) {
@@ -88,16 +87,10 @@ function Tags() {
   const [tagName, setTagName] = useState("");
   const [tagColor, setTagColor] = useState(TAG_COLORS[0]);
 
-  const [assignExam, setAssignExam] = useState(null);
-
-  function refresh() {
-    setExams(getExams());
-    setFolders(getFolders());
-    setTags(getTags());
-  }
+  const [assignQuestion, setAssignQuestion] = useState(null);
+  const [questionTagIds, setQuestionTagIds] = useState([]);
 
   useEffect(() => {
-    // One-time migration of legacy marked questions into a tag.
     migrateMarkedToTags();
     setExams(getExams());
     setFolders(getFolders());
@@ -110,14 +103,32 @@ function Tags() {
     setTags(getTags());
   }, [location.pathname, location.key]);
 
-  const groups = useMemo(
-    () => buildExamGroups(exams, folders, activeTagId, tags),
+  const refresh = useCallback(() => {
+    setExams(getExams());
+    setFolders(getFolders());
+    setTags(getTags());
+  }, []);
+
+  const entries = useMemo(
+    () => buildTaggedQuestions(exams, folders, activeTagId, tags),
+    // getExamData reads live storage; exams/folders/tags drive recompute
     [exams, folders, activeTagId, tags]
   );
 
   const tagUsageCount = useCallback(
-    (tagId) =>
-      exams.filter((exam) => examMatchesTag(exam, tagId)).length,
+    (tagId) => {
+      let count = 0;
+      exams.forEach((exam) => {
+        const map = getExamData(exam.id)?.questionTags;
+        if (!map) return;
+        Object.values(map).forEach((list) => {
+          if (Array.isArray(list) && list.some((id) => String(id) === String(tagId))) {
+            count += 1;
+          }
+        });
+      });
+      return count;
+    },
     [exams]
   );
 
@@ -181,7 +192,7 @@ function Tags() {
     const count = tagUsageCount(tag.id);
     const message =
       count > 0
-        ? t("tags.deleteConfirmWithExams", { count })
+        ? t("tags.deleteConfirmWithQuestions", { count })
         : t("tags.deleteConfirm");
 
     const ok = window.confirm(message);
@@ -202,12 +213,48 @@ function Tags() {
     refresh();
   }
 
-  function toggleAssign(examId, tagId, assign) {
-    const ok = setExamTag(examId, tagId, assign);
-    if (!ok) {
+  function openAssign(entry) {
+    setAssignQuestion(entry);
+    setQuestionTagIds(
+      entry.tags.map((tag) => String(tag.id))
+    );
+  }
+
+  function toggleAssignTag(tagId) {
+    setQuestionTagIds((prev) =>
+      prev.some((id) => String(id) === String(tagId))
+        ? prev.filter((id) => String(id) !== String(tagId))
+        : [...prev, String(tagId)]
+    );
+  }
+
+  function handleAssignSave() {
+    if (!assignQuestion) return;
+
+    const examId = assignQuestion.examId;
+    const questionNumber = assignQuestion.questionNumber;
+
+    // Compute the diff between the saved list and the edited list.
+    const savedIds = assignQuestion.tags.map((tag) => String(tag.id));
+    const tagsNow = getTags();
+
+    let failed = false;
+    tagsNow.forEach((tag) => {
+      const idStr = String(tag.id);
+      const wasAssigned = savedIds.includes(idStr);
+      const nowAssigned = questionTagIds.includes(idStr);
+      if (wasAssigned !== nowAssigned) {
+        const ok = setQuestionTag(examId, questionNumber, tag.id, nowAssigned);
+        if (!ok) failed = true;
+      }
+    });
+
+    if (failed) {
       showToast(t("tags.assignFailed"), "error");
-      return;
     }
+
+    setAssignQuestion(null);
+    setQuestionTagIds([]);
     refresh();
   }
 
@@ -269,7 +316,7 @@ function Tags() {
         </div>
       )}
 
-      {groups.length === 0 ? (
+      {entries.length === 0 ? (
 
         <div className="empty-state marked-empty-state">
 
@@ -287,87 +334,57 @@ function Tags() {
 
       ) : (
 
-        <div className="marked-groups rise-list">
+        <div className="tagged-question-list rise-list">
 
-          {groups.map((group) => (
+          {entries.map((entry) => (
 
             <div
-              key={group.examId}
-              className="marked-group"
+              key={`${entry.examId}-${entry.questionNumber}`}
+              className="tagged-question-row"
             >
 
-              <div className="marked-group-header">
+              <Link
+                to={`/exam/${entry.examId}?question=${entry.questionNumber}`}
+                className="tagged-question-main"
+              >
+                <span className="tagged-question-number num">
+                  {entry.questionNumber}
+                </span>
 
-                <div className="marked-group-info">
+                <span className="tagged-question-exam">
+                  <Icon name="fileText" size={14} />
+                  {entry.examName}
+                </span>
 
-                  <span className="marked-folder">
-                    <Icon name="folder" size={14} />
-
-                    <span>
-                      {group.folderName || t("tags.noFolder")}
-                    </span>
+                {entry.folderName && (
+                  <span className="tagged-question-folder">
+                    <Icon name="folder" size={13} />
+                    {entry.folderName}
                   </span>
+                )}
+              </Link>
 
-                  <h3>
-                    <Icon name="fileText" size={16} />
-
-                    <span>
-                      {group.examName}
-                    </span>
-                  </h3>
-
-                  <div className="tag-chips">
-                    {group.examTags.map((tag) => (
-                      <span key={tag.id} className="tag-chip">
-                        <span
-                          className="filter-dot"
-                          style={{ backgroundColor: tag.color || "#4A90E2" }}
-                        />
-                        {tag.name}
-                      </span>
-                    ))}
-                  </div>
-
-                </div>
-
-                <div className="marked-count">
-
-                  <button
-                    type="button"
-                    className="secondary-button btn-icon-only btn-sm"
-                    aria-label={t("tags.assign")}
-                    title={t("tags.assign")}
-                    onClick={() => setAssignExam(group)}
-                  >
-                    <Icon name="pen" size={15} />
-                  </button>
-
-                </div>
-
+              <div className="tagged-question-tags">
+                {entry.tags.map((tag) => (
+                  <span key={tag.id} className="tag-chip">
+                    <span
+                      className="filter-dot"
+                      style={{ backgroundColor: tag.color || "#4A90E2" }}
+                    />
+                    {tag.name}
+                  </span>
+                ))}
               </div>
 
-              <div className="marked-question-list">
-
-                <Link
-                  to={`/exam/${group.examId}`}
-                  className="marked-question"
-                  title={t("tags.openExam")}
-                >
-                  <span className="marked-question-star">
-                    <Icon name="star" size={14} fill="currentColor" />
-                  </span>
-
-                  <span className="marked-question-number">
-                    {t("tags.openExam")}
-                  </span>
-
-                  <span className="marked-question-arrow">
-                    <Icon name="arrowBack" size={14} />
-                  </span>
-
-                </Link>
-
-              </div>
+              <button
+                type="button"
+                className="secondary-button btn-icon-only btn-sm"
+                aria-label={t("tags.assign")}
+                title={t("tags.assign")}
+                onClick={() => openAssign(entry)}
+              >
+                <Icon name="pen" size={14} />
+              </button>
 
             </div>
 
@@ -415,7 +432,7 @@ function Tags() {
                 handleDelete(editingTag);
               }}
             >
-              {t("common.delete", "Delete")}
+              {t("common.delete")}
             </button>
           )}
           <button type="button" className="secondary-button" onClick={handleCloseModal}>
@@ -428,10 +445,20 @@ function Tags() {
       </Modal>
 
       <Modal
-        open={Boolean(assignExam)}
-        onClose={() => setAssignExam(null)}
+        open={Boolean(assignQuestion)}
+        onClose={() => {
+          setAssignQuestion(null);
+          setQuestionTagIds([]);
+        }}
         title={t("tags.assignTitle")}
-        subtitle={assignExam?.examName}
+        subtitle={
+          assignQuestion
+            ? t("tags.assignSubtitle", {
+                exam: assignQuestion.examName,
+                q: assignQuestion.questionNumber,
+              })
+            : null
+        }
         size="sm"
       >
         {tags.length === 0 ? (
@@ -439,15 +466,13 @@ function Tags() {
         ) : (
           <div className="tag-assign-list">
             {tags.map((tag) => {
-              const assigned = examMatchesTag(assignExam || {}, tag.id);
+              const assigned = questionTagIds.includes(String(tag.id));
               return (
                 <label key={tag.id} className="tag-assign-row">
                   <input
                     type="checkbox"
                     checked={assigned}
-                    onChange={(e) =>
-                      toggleAssign(assignExam.examId, tag.id, e.target.checked)
-                    }
+                    onChange={() => toggleAssignTag(tag.id)}
                   />
                   <span
                     className="filter-dot"
@@ -464,7 +489,7 @@ function Tags() {
           <button
             type="button"
             className="primary-button"
-            onClick={() => setAssignExam(null)}
+            onClick={handleAssignSave}
           >
             {t("common.confirm")}
           </button>

@@ -623,3 +623,24 @@ html[dir="rtl"] .app-main {
     display: none;
   }
 }
+
+/* Sync indicator is now a button — reset native button chrome */
+button.topbar-sync {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+button.topbar-sync:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+
+button.topbar-sync:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

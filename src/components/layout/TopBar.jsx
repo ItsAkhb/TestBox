@@ -68,6 +68,15 @@ export default function TopBar() {
   const timeStr = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   const dateStr = formatDate(time, { weekday: "short", month: "short", day: "numeric" });
 
+  // Manual sync: fire the same local-change event the sync engine
+  // listens on — the orchestrator's own offline/backoff guards decide
+  // whether a cycle runs. Clicking never bypasses data safety.
+  function handleManualSync() {
+    if (!user) return;
+    if (syncStatus === "syncing") return;
+    window.dispatchEvent(new CustomEvent("testbox-local-change"));
+  }
+
   return (
     <header className="topbar">
       <div className="topbar-left">
@@ -85,10 +94,21 @@ export default function TopBar() {
           </span>
         </span>
 
-        <span key={syncStatus} className={`topbar-sync sync-${syncStatus}`} title={t(`sync.${syncStatus}`)}>
+        <button
+          key={syncStatus}
+          type="button"
+          className={`topbar-sync sync-${syncStatus}`}
+          title={
+            syncStatus === "offline" || syncStatus === "idle"
+              ? t(`sync.${syncStatus}`)
+              : `${t(`sync.${syncStatus}`)} — ${t("sync.manual")}`
+          }
+          onClick={handleManualSync}
+          aria-label={`${t(`sync.${syncStatus}`)} — ${t("sync.manual")}`}
+        >
           <span className="sync-dot" />
           {syncStatus !== "idle" && <span className="sync-text">{t(`sync.${syncStatus}`)}</span>}
-        </span>
+        </button>
 
         {/* Active exam timer / practice stopwatch — mirrored from the
             Exam page's own engines; hidden on the exam page itself to

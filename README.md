@@ -12,9 +12,9 @@ Organize exams into folders and subjects, solve practice sheets with a built-in 
 * Per-question answer key editor with custom numbering and partial keys
 * Exam lifecycle: start → timer → auto-finish → score report → retake
 * **Practice stopwatch** — measures real study time (pause-aware), feeds daily reports and monthly totals
-* **Tags (برچسب‌ها)** — organize exams with tags (create/rename/delete/assign), fully synced
+* **Tags (برچسب‌ها)** — tag individual questions (create/rename/delete/assign), fully synced
 * **Unresolved questions (حل‌نشده)** — mark questions you worked on but couldn't solve; tracked in reports without distorting accuracy
-* Marked questions for review across all exams
+* **Friends (دوستان)** — unique usernames, friend requests, online presence
 
 ### Insights
 * Dashboard with today's stats, streaks, and a 7-day activity rhythm
@@ -111,7 +111,7 @@ Never commit environment files or private keys to the repository.
 
 ## Current Status
 
-**v2.1.0 released.**
+**v2.1.1 released.**
 
 Implemented:
 
@@ -123,7 +123,7 @@ Implemented:
 
 In progress / planned:
 
-* Cloud sync for subjects, activity, and settings (unlocks with the optional Supabase schema migration — see PROJECT_STATE.md)
+* Leaderboards / shared study stats between friends
 * Code-splitting for the web bundle
 * Code-signing certificates for Windows/macOS distribution
 

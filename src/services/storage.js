@@ -188,6 +188,7 @@ const DEFAULT_EXAM_DATA = {
   correctAnswers: {},
   marked: [],
   unresolved: [],
+  questionTags: {},
   results: {},
   note: "",
   answerKey: {},
@@ -371,6 +372,11 @@ function normalizeExamData(data) {
       Array.isArray(data.unresolved)
         ? data.unresolved
         : [],
+
+    questionTags:
+      isObject(data.questionTags)
+        ? data.questionTags
+        : {},
 
     results:
       isObject(data.results)
@@ -1148,19 +1154,24 @@ export function deleteTag(tagId) {
   const remaining = tags.filter((t) => !idsEqual(t.id, tagId));
   if (!saveTags(remaining)) return false;
 
+  // Strip the deleted tag from every question's tag list.
   const exams = getExams();
-  const affected = exams.filter(
-    (e) => Array.isArray(e.tagIds) && e.tagIds.some((id) => idsEqual(id, tagId))
-  );
-  if (affected.length > 0) {
-    saveExams(
-      exams.map((e) =>
-        Array.isArray(e.tagIds) && e.tagIds.some((id) => idsEqual(id, tagId))
-          ? { ...e, tagIds: e.tagIds.filter((id) => !idsEqual(id, tagId)) }
-          : e
-      )
-    );
-  }
+  exams.forEach((exam) => {
+    const data = readJson(getExamDataKey(exam.id), null);
+    if (!data || !isObject(data) || !isObject(data.questionTags)) return;
+    let changed = false;
+    const map = {};
+    Object.entries(data.questionTags).forEach(([key, list]) => {
+      if (!Array.isArray(list)) return;
+      const filtered = list.filter((id) => !idsEqual(id, tagId));
+      if (filtered.length !== list.length) changed = true;
+      if (filtered.length > 0) map[key] = filtered;
+    });
+    if (changed) {
+      writeJson(getExamDataKey(exam.id), { ...data, questionTags: map });
+      markDirty("examData", exam.id);
+    }
+  });
 
   recordLocalDelete("tag", tagId);
   notifyLocalChange();
@@ -1168,13 +1179,25 @@ export function deleteTag(tagId) {
 }
 
 // Assign/unassign a tag on an exam; idempotent.
-export function setExamTag(examId, tagId, assigned) {
+// ---- Question-level tags ----
+// Tags belong to QUESTIONS: examData.questionTags maps
+// { "<questionNumber>": [tagId, …] }. The old exam-level tagIds and the
+// legacy marked list migrate into this shape once (below).
+
+export function getQuestionTags(examId, questionNumber) {
+  const data = getExamData(examId);
+  const list = data.questionTags?.[String(questionNumber)];
+  return Array.isArray(list) ? list : [];
+}
+
+export function setQuestionTag(examId, questionNumber, tagId, assigned) {
   if (!isValidId(examId) || !isValidId(tagId)) return false;
-  const exams = getExams();
-  const index = exams.findIndex((e) => idsEqual(e.id, examId));
-  if (index === -1) return false;
-  const current = Array.isArray(exams[index].tagIds) ? exams[index].tagIds : [];
+  const data = getExamData(examId);
+  const map = isObject(data.questionTags) ? { ...data.questionTags } : {};
+  const key = String(questionNumber);
+  const current = Array.isArray(map[key]) ? [...map[key]] : [];
   const has = current.some((tid) => idsEqual(tid, tagId));
+
   let next;
   if (assigned && !has) {
     next = [...current, tagId];
@@ -1183,52 +1206,76 @@ export function setExamTag(examId, tagId, assigned) {
   } else {
     return true;
   }
-  const updated = [...exams];
-  updated[index] = { ...exams[index], tagIds: next };
-  const saved = saveExams(updated);
-  if (saved) notifyLocalChange();
+
+  if (next.length > 0) {
+    map[key] = next;
+  } else {
+    delete map[key];
+  }
+
+  const saved = saveExamData(examId, { ...data, questionTags: map });
   return saved;
 }
 
-// One-time migration: exams with marked questions get a default
-// "marked" tag assigned. The marked question data itself is kept —
-// nothing is deleted. Safe to call repeatedly (marker key prevents
-// re-running; existing tagIds are never touched).
+// One-time migration (v2.1.0 → v2.1.1): exam-level tag assignments and
+// the legacy "marked" list become question tags. Marked questions get a
+// stable "Marked"-equivalent tag (__marked__ by name, resolved by i18n
+// at display time). Existing data is only ever moved, never deleted.
 export function migrateMarkedToTags() {
-  const MIGRATION_KEY = `${getStoragePrefix()}tags-marked-migrated`;
+  const MIGRATION_KEY = `${getStoragePrefix()}tags-question-migrated`;
   if (readJson(MIGRATION_KEY, false) === true) return false;
 
+  let migratedAny = false;
   const exams = getExams();
-  const withMarked = exams.filter(
-    (e) => {
-      if (Array.isArray(e.tagIds) && e.tagIds.length > 0) return false;
-      const data = readJson(getExamDataKey(e.id), null);
-      return (
-        data &&
-        Array.isArray(data.marked) &&
-        data.marked.length > 0
-      );
-    }
-  );
+  const tags = getTags();
 
-  if (withMarked.length > 0) {
-    const tags = getTags();
-    let markedTag = tags.find((t) => t.name === "__marked__");
-    if (!markedTag) {
-      markedTag = { id: Date.now(), name: "__marked__" };
-      saveTags([...tags, markedTag]);
-    }
-    saveExams(
-      exams.map((e) =>
-        withMarked.some((m) => idsEqual(m.id, e.id))
-          ? { ...e, tagIds: [...(Array.isArray(e.tagIds) ? e.tagIds : []), markedTag.id] }
-          : e
-      )
-    );
+  let markedTag = tags.find((t) => t.name === "__marked__");
+  if (!markedTag) {
+    markedTag = { id: Date.now(), name: "__marked__" };
+    saveTags([...tags, markedTag]);
   }
 
+  exams.forEach((exam) => {
+    const data = readJson(getExamDataKey(exam.id), null);
+    if (!data || !isObject(data)) return;
+
+    const map = isObject(data.questionTags) ? { ...data.questionTags } : {};
+
+    // 1. Legacy marked questions → __marked__ tag
+    if (Array.isArray(data.marked)) {
+      data.marked.forEach((q) => {
+        const key = String(q);
+        const list = Array.isArray(map[key]) ? [...map[key]] : [];
+        if (!list.some((tid) => idsEqual(tid, markedTag.id))) {
+          list.push(markedTag.id);
+          map[key] = list;
+        }
+      });
+    }
+
+    // 2. Exam-level tagIds → every question of the exam gets them
+    //    (v2.1.0 semantics: the tag applied to the whole exam).
+    if (Array.isArray(exam.tagIds) && exam.tagIds.length > 0) {
+      const count = Number(exam.questionCount) || 0;
+      for (let q = 1; q <= count; q += 1) {
+        const key = String(q);
+        const list = Array.isArray(map[key]) ? [...map[key]] : [];
+        exam.tagIds.forEach((tid) => {
+          if (!list.some((x) => idsEqual(x, tid))) list.push(tid);
+        });
+        map[key] = list;
+      }
+    }
+
+    if (Object.keys(map).length > 0) {
+      writeJson(getExamDataKey(exam.id), { ...data, questionTags: map });
+      markDirty("examData", exam.id);
+      migratedAny = true;
+    }
+  });
+
   writeJson(MIGRATION_KEY, true);
-  return withMarked.length > 0;
+  return migratedAny;
 }
 
 // =========================================================

@@ -13,6 +13,16 @@ import {
 } from "../services/dataService";
 import { getTodayActivity, getStreak, getActivityForDateRange } from "../services/activityTracker";
 import { toLocalDateString } from "../utils/date";
+
+// 3600s → "1:00:00", 125s → "2:05"; hours grow unbounded
+function formatStudySeconds(totalSeconds) {
+  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0
+    ? `${h}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`
+    : `${m}:${String(s % 60).padStart(2, "0")}`;
+}
 import MiniCalendar from "../components/calendar/MiniCalendar";
 import Icon from "../components/ui/Icon";
 import CountUp from "../components/ui/CountUp";
@@ -437,6 +447,16 @@ function Home() {
               <span className="meta-lb">{t("home.today.accuracy")}</span>
             </span>
             <span className="today-meta-dot" aria-hidden="true">·</span>
+            {(todayActivity?.studySeconds || 0) > 0 && (
+              <>
+                <span className="today-meta-item">
+                  <span className="meta-ic" aria-hidden="true"><Icon name="timer" size={15} /></span>
+                  <strong className="num">{formatStudySeconds(todayActivity.studySeconds)}</strong>
+                  <span className="meta-lb">{t("calendar.studyTime")}</span>
+                </span>
+                <span className="today-meta-dot" aria-hidden="true">·</span>
+              </>
+            )}
             <span className="today-meta-item">
               <span className="meta-ic" aria-hidden="true"><Icon name="flame" size={15} /></span>
               <strong className="num">{streak}</strong>

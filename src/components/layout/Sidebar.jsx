@@ -15,6 +15,7 @@ const NAV_ITEMS = [
 const BOTTOM_ITEMS = [
   { path: "/account", icon: "user", labelKey: "nav.account", authOnly: true },
   { path: "/login", icon: "login", labelKey: "nav.login", guestOnly: true },
+  { path: "/friends", icon: "users", labelKey: "nav.friends" },
   { path: "/settings", icon: "settings", labelKey: "nav.settings" },
 ];
 

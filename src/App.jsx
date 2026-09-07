@@ -19,6 +19,7 @@ import Calendar from "./pages/Calendar";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Account from "./pages/Account";
+import Friends from "./pages/Friends";
 
 import CloudSyncManager from "./components/CloudSyncManager";
 
@@ -55,6 +56,7 @@ function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/calendar" element={<Calendar />} />
             <Route path="/account" element={<Account />} />
+            <Route path="/friends" element={<Friends />} />
           </Route>
 
           <Route path="/login" element={<Login />} />

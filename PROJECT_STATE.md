@@ -1,11 +1,39 @@
-# TestBox — Project State & Release Status (v2.1.0)
+# TestBox — Project State & Release Status (v2.1.1)
 
-## RELEASE STATUS: v2.1.0
+## RELEASE STATUS: v2.1.1
 
 **Last updated: 2026-09-05.** v2.0.0 history is in git history
 (`git log --follow PROJECT_STATE.md`).
 
-## What ships in v2.1.0 (on top of v2.0.0)
+## What ships in v2.1.1 (on top of v2.1.0)
+
+- **Question-level tags:** tags now attach to individual QUESTIONS
+  (`examData.questionTags` = { qNum: [tagId,…] }), replacing exam-level
+  assignments and the old marked system. One-time migration folds both
+  into question tags (`__marked__` tag for legacy marked questions —
+  marked data preserved). Tags page is now a tagged-question browser
+  (filter chips, per-question assign modal, deep-links `?question=N`).
+  Synced via `exam_questions.tag_ids` (new column).
+- **Friends system:** unique usernames + display names (auto-created
+  profile from email), search by username, send/accept/reject/cancel
+  requests, friend list, presence (5-min heartbeat window). Server-side
+  via `profiles`/`friend_requests`/`friendships` tables with RLS.
+  Cloud-only by design (account data; nothing to store locally).
+- **Statistics fixes:** practice percentage now counts only questions
+  with an actual result (untouched no longer drag it down); removing an
+  answer/marking/unresolved fully reverts the question's recorded
+  outcome (solved included); edits to a question recorded on an earlier
+  day roll back THAT day's tallies instead of creating activity today
+  (30-day origin scan). Node gates: stats/date 9/9, question-tags 15/15.
+- **Home shows study time** in the daily summary when > 0.
+- **Clickable sync indicator:** the TopBar dot is a button — clicking
+  fires a manual upload-first sync cycle (guarded by the same
+  offline/backoff logic; no data-safety bypass).
+- **Backup fixes:** import/clear redirects now use the hash route
+  (`#/​`) instead of `/` (which 404'd on GitHub Pages). Export/import
+  verified working.
+
+## What shipped in v2.1.0 (on top of v2.0.0)
 
 - **Unresolved question state (حل‌نشده):** a first-class per-question state
   (`examData.unresolved`) — the user worked on a question but could not solve
@@ -46,7 +74,7 @@
 | Subjects | `subjects` | dirty-only upload |
 | Daily activity (solved/correct/wrong/unanswered/unresolved/study seconds) | `daily_activity` | per-day merge, dirty day wins |
 | Settings (language, weather location) | `user_settings` | dirty-only upload |
-| Tags + assignments | `tags` + `exams.tag_ids` | tombstoned deletes |
+| Tags + question assignments | `tags` + `exam_questions.tag_ids` | tombstoned deletes |
 | Deletes | tombstones in the dirty registry | applied to cloud before upserts |
 | Timers (`testbox-timer-*`), theme | local-only by design | wall-clock recomputable / device preference |
 
@@ -56,7 +84,7 @@
 load and treats missing pieces as local-only (never destructive). The full
 SQL is in `docs/packaging.md` → "Supabase schema migration".
 
-## Build status (v2.1.0, this machine)
+## Build status (v2.1.1, this machine)
 
 | Check | Result |
 |---|---|

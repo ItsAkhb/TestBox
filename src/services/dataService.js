@@ -46,7 +46,8 @@ import {
   createTag,
   updateTag,
   deleteTag,
-  setExamTag,
+  getQuestionTags,
+  setQuestionTag,
   migrateMarkedToTags,
 
   getDirtyState,
@@ -104,7 +105,8 @@ export {
   createTag,
   updateTag,
   deleteTag,
-  setExamTag,
+  getQuestionTags,
+  setQuestionTag,
   migrateMarkedToTags,
 
   getDirtyState,

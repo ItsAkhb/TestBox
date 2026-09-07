@@ -1,4 +1,5 @@
 import {
+  Users,
   Home,
   FolderOpen,
   AlignJustify,
@@ -159,6 +160,7 @@ const iconMap = {
   pen: PenLine,
   penLine: PenLine,
   calculator: Calculator,
+  users: Users,
   timer: Timer,
   graduation: GraduationCap,
   brain: Brain,

@@ -92,10 +92,12 @@ function applyCount(data, examEntry, field) {
 
 /**
  * Record a question being answered (or re-answered).
- * The FIRST answer of a given question on a given day counts toward "solved".
- * Changing the answer updates the correct/wrong/unanswered tally instead of
- * double counting. Re-renders/navigation are safe: activity is only recorded
- * when this function is explicitly invoked by a user action handler.
+ * The FIRST result of a given question counts toward "solved" on the day
+ * the work happened. If the question was already recorded on an EARLIER
+ * day, edits (re-answers, marking correct/wrong, removing the answer)
+ * roll back that earlier day's tallies instead of creating activity
+ * today — statistics represent when the work happened, not when the
+ * data was edited. Genuinely new questions record today.
  *
  * examMeta: { examId, examName, folderId, subjectId }
  * questionNumber: number
@@ -104,9 +106,19 @@ function applyCount(data, examEntry, field) {
 export function recordQuestionAnswered(examMeta, questionNumber, outcome) {
   if (!examMeta || examMeta.examId == null) return;
 
+  const key = `${examMeta.examId}:${questionNumber}`;
+
+  // Find the day this question was LAST recorded on (most recent first,
+  // bounded scan). That day owns the outcome: edits roll back there.
+  const originDate = findOutcomeOriginDate(key);
+
+  if (originDate && originDate !== getTodayString()) {
+    applyOutcomeToDate(originDate, key, examMeta, outcome);
+    return;
+  }
+
   const { date, data } = getOrCreateToday();
 
-  const key = `${examMeta.examId}:${questionNumber}`;
   const isNew = !data.answeredKeys[key];
 
   const examEntry = ensureExamEntry(data, examMeta);
@@ -115,15 +127,10 @@ export function recordQuestionAnswered(examMeta, questionNumber, outcome) {
     data.answeredKeys[key] = true;
     data.solved += 1;
     examEntry.solved += 1;
-  } else {
-    // Re-answer: subtract the previous outcome's tally so totals stay accurate
-    // (the previous outcome for this question today is unknown post-refresh,
-    // so we simply count the new outcome as a correction when it changes).
   }
 
-  // Determine previous outcome at question level is not tracked individually;
-  // to keep totals consistent we track per-question outcome in the key map:
-  // answeredKeys stores the outcome: { "<examId>:<qNum>": "correct"|"wrong"|"unanswered" }
+  // Determine previous outcome at question level via the key map:
+  // answeredKeys stores the outcome: { "<examId>:<qNum>": outcome }
   const previousOutcome = isNew ? null : data.answeredKeys[key];
   if (!isNew && previousOutcome === outcome) {
     // No effective change; avoid inflating tallies
@@ -164,6 +171,134 @@ export function recordQuestionAnswered(examMeta, questionNumber, outcome) {
   data.answeredKeys[key] = outcome;
 
   saveActivity(date, data);
+}
+
+// How many recent days to scan when looking for a question's origin day.
+const OUTCOME_HISTORY_DAYS = 30;
+
+/**
+ * Fully revert a question's recorded outcome (answer deselected / state
+ * cleared): rolls back its solved + outcome tallies on the day it was
+ * recorded and removes its dedup key, so re-answering counts fresh.
+ * Used when the user removes their selection entirely — the question
+ * must not remain counted as solved/tested.
+ */
+export function revertQuestion(examMeta, questionNumber) {
+  if (!examMeta || examMeta.examId == null) return;
+
+  const key = `${examMeta.examId}:${questionNumber}`;
+  const originDate = findOutcomeOriginDate(key);
+  if (!originDate) return; // nothing recorded
+
+  const data = getActivity(originDate);
+  if (!data || !isObject(data)) return;
+
+  const previousOutcome = data.answeredKeys?.[key];
+
+  const examEntry = (data.exams || []).find(
+    (e) => String(e.examId) === String(examMeta.examId)
+  );
+
+  const rollback = (field) => {
+    if (!field) return;
+    data[field] = Math.max(0, (Number(data[field]) || 0) - 1);
+    if (examEntry) {
+      examEntry[field] = Math.max(0, (Number(examEntry[field]) || 0) - 1);
+    }
+  };
+
+  data.solved = Math.max(0, (Number(data.solved) || 0) - 1);
+  if (examEntry) {
+    examEntry.solved = Math.max(0, (Number(examEntry.solved) || 0) - 1);
+  }
+
+  if (previousOutcome === "correct") rollback("correct");
+  else if (previousOutcome === "wrong") rollback("wrong");
+  else if (previousOutcome === "unresolved") rollback("unresolved");
+  else if (previousOutcome === "unanswered") rollback("unanswered");
+
+  delete data.answeredKeys[key];
+
+  saveActivity(originDate, data);
+}
+
+/**
+ * Find the most recent day (≤ today) whose record contains `key` in
+ * answeredKeys. Returns null when the question has no recorded outcome
+ * in the scanned window (then today is its origin).
+ */
+function findOutcomeOriginDate(key) {
+  let cursor = getTodayString();
+  for (let i = 0; i < OUTCOME_HISTORY_DAYS; i += 1) {
+    const record = getActivity(cursor);
+    if (record && isObject(record) && record.answeredKeys && record.answeredKeys[key] != null) {
+      return cursor;
+    }
+    cursor = shiftDate(cursor, -1);
+  }
+  return null;
+}
+
+/**
+ * Apply an outcome change to the day the question was originally worked
+ * on. The `solved` count NEVER changes here (the question was already
+ * counted as worked on that day) — only the outcome bucket rotates, and
+ * a fully reverted question ("unanswered" with no selection anymore)
+ * leaves that day's tallies rolled back without creating today's
+ * activity.
+ */
+function applyOutcomeToDate(originDate, key, examMeta, outcome) {
+  const data = getActivity(originDate);
+  if (!data || !isObject(data)) return;
+
+  const examEntry = (data.exams || []).find(
+    (e) => String(e.examId) === String(examMeta.examId)
+  );
+
+  const previousOutcome = data.answeredKeys?.[key];
+
+  if (previousOutcome === outcome) {
+    return; // nothing changed
+  }
+
+  const rollback = (field) => {
+    if (!field) return;
+    data[field] = Math.max(0, (Number(data[field]) || 0) - 1);
+    if (examEntry) {
+      examEntry[field] = Math.max(0, (Number(examEntry[field]) || 0) - 1);
+    }
+  };
+
+  if (previousOutcome === "correct") rollback("correct");
+  else if (previousOutcome === "wrong") rollback("wrong");
+  else if (previousOutcome === "unresolved") rollback("unresolved");
+  else if (previousOutcome === "unanswered") rollback("unanswered");
+
+  if (outcome === "unanswered") {
+    // Answer fully removed: the question stays "solved" for that day
+    // (the work happened) but has no outcome bucket anymore.
+    data.answeredKeys[key] = "unanswered";
+    saveActivity(originDate, data);
+    return;
+  }
+
+  if (outcome === "correct") {
+    data.correct = (Number(data.correct) || 0) + 1;
+    if (examEntry) examEntry.correct = (Number(examEntry.correct) || 0) + 1;
+  } else if (outcome === "wrong") {
+    data.wrong = (Number(data.wrong) || 0) + 1;
+    if (examEntry) examEntry.wrong = (Number(examEntry.wrong) || 0) + 1;
+  } else if (outcome === "unresolved") {
+    data.unresolved = (Number(data.unresolved) || 0) + 1;
+    if (examEntry) examEntry.unresolved = (Number(examEntry.unresolved) || 0) + 1;
+  } else {
+    data.unanswered = (Number(data.unanswered) || 0) + 1;
+    if (examEntry) examEntry.unanswered = (Number(examEntry.unanswered) || 0) + 1;
+  }
+
+  data.answeredKeys[key] = outcome;
+
+  saveActivity(originDate, data);
 }
 
 /**

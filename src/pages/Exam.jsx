@@ -24,6 +24,7 @@ import {
   recordQuestionAnswered,
   recordExamCompleted,
   recordStudyTime,
+  revertQuestion,
 } from "../services/activityTracker";
 import { getQuestionNumbers } from "../services/scoring";
 import { useTranslation } from "../i18n";
@@ -82,9 +83,19 @@ function calculatePercentage(
   correct,
   wrong,
   totalQuestions,
-  negativeMarking
+  negativeMarking,
+  resultedQuestions = null
 ) {
-  if (!totalQuestions) {
+  // Denominator: the number of questions with an ACTUAL result when the
+  // caller provides one (practice mode — untouched questions must not
+  // drag the percentage down). Exam mode passes the full total: every
+  // question there ends up correct/wrong/unanswered by design.
+  const denominator =
+    resultedQuestions != null && resultedQuestions > 0
+      ? resultedQuestions
+      : totalQuestions;
+
+  if (!denominator) {
     return 0;
   }
 
@@ -93,8 +104,8 @@ function calculatePercentage(
     : correct;
 
   const maxScore = negativeMarking
-    ? totalQuestions * 3
-    : totalQuestions;
+    ? denominator * 3
+    : denominator;
 
   return (
     (score / maxScore) *
@@ -261,14 +272,25 @@ function ExamContent({ id }) {
       return 0;
     }
 
+    // Practice mode: only questions with an actual result (correct/wrong)
+    // count toward the percentage — untouched questions must not drag it
+    // down. Exam mode: the whole exam (answered + unanswered) is the
+    // denominator by design.
+    const resulted =
+      isExamMode
+        ? exam.questionCount || 0
+        : stats.correct + stats.wrong;
+
     return calculatePercentage(
       stats.correct,
       stats.wrong,
       exam.questionCount || 0,
-      negativeMarking
+      negativeMarking,
+      resulted
     );
   }, [
     exam,
+    isExamMode,
     stats.correct,
     stats.wrong,
     negativeMarking,
@@ -786,9 +808,10 @@ function ExamContent({ id }) {
           updatedUnresolved,
       });
 
-      // Deselect: today's outcome reverts to unanswered (dedup handles tallies)
+      // Deselect: fully revert the question's recorded outcome — it must
+      // not remain counted as solved/tested (per-day rollback).
       if (examMeta) {
-        recordQuestionAnswered(examMeta, questionNumber, wasUnresolved ? "unanswered" : "unanswered");
+        revertQuestion(examMeta, questionNumber);
       }
 
       return;
@@ -939,7 +962,8 @@ function ExamContent({ id }) {
     );
 
     if (isUnresolved) {
-      // Remove unresolved: the question returns to unanswered/clean state
+      // Remove unresolved: the question returns to a clean state — fully
+      // revert its recorded outcome (it must not stay counted as solved).
       saveData({
         unresolved: currentUnresolved.filter(
           (number) => number !== questionNumber
@@ -947,7 +971,7 @@ function ExamContent({ id }) {
       });
 
       if (examMeta) {
-        recordQuestionAnswered(examMeta, questionNumber, "unanswered");
+        revertQuestion(examMeta, questionNumber);
       }
 
       return;
@@ -1027,9 +1051,9 @@ function ExamContent({ id }) {
           updatedCorrectAnswers,
       });
 
-      // Unmarking: today's outcome reverts to unanswered
+      // Unmarking correct/wrong: fully revert the recorded outcome
       if (examMeta) {
-        recordQuestionAnswered(examMeta, questionNumber, "unanswered");
+        revertQuestion(examMeta, questionNumber);
       }
 
       return;

@@ -1,11 +1,11 @@
 # Packaging: Windows (Electron) & Android (Capacitor)
 
-TestBox v2.1.0 ships three ways from one codebase:
+TestBox v2.1.1 ships three ways from one codebase:
 
 | Platform | Wrapper | Output | Config |
 |---|---|---|---|
 | Web | none (Vite static site) | `dist/` → GitHub Pages | `vite.config.js` |
-| Windows | Electron 44 | `release/TestBox-Setup-2.1.0.exe`, `release/TestBox-Portable-2.1.0.exe` | `electron-builder.json5` |
+| Windows | Electron 44 | `release/TestBox-Setup-2.1.1.exe`, `release/TestBox-Portable-2.1.1.exe` | `electron-builder.json5` |
 | Android | Capacitor 7 | `android/app/build/outputs/apk/release/app-release.apk` | `capacitor.config.json` |
 
 ## Rationale
@@ -40,9 +40,9 @@ npm run dist:win       # build:packaged + electron-builder --win
 
 Outputs in `release/` (gitignored):
 
-- `TestBox-Setup-2.1.0.exe` — NSIS installer x64 (user-chosen install dir,
+- `TestBox-Setup-2.1.1.exe` — NSIS installer x64 (user-chosen install dir,
   desktop + Start-menu shortcuts)
-- `TestBox-Portable-2.1.0.exe` — standalone portable x64
+- `TestBox-Portable-2.1.1.exe` — standalone portable x64
 
 Details:
 
@@ -162,3 +162,30 @@ create policy "own activity" on daily_activity for all using (auth.uid() = user_
 create policy "own settings" on user_settings for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own tags" on tags for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 ```
+
+### Friends schema (v2.1.1)
+
+```sql
+create table if not exists profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  username text unique not null, display_name text,
+  updated_at timestamptz default now()
+);
+create table if not exists friend_requests (
+  id bigint generated always as identity primary key,
+  requester_id uuid not null references auth.users(id) on delete cascade,
+  addressee_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz default now(),
+  unique (requester_id, addressee_id)
+);
+create table if not exists friendships (
+  id bigint generated always as identity primary key,
+  user_a uuid not null references auth.users(id) on delete cascade,
+  user_b uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz default now(),
+  unique (user_a, user_b)
+);
+```
+(RLS: profiles readable by authenticated users, writable only by owner;
+requests visible/participable by both parties; friendships visible to
+both sides. Presence = profiles.updated_at heartbeat within 5 min.)
