@@ -59,7 +59,7 @@ const THEME_KEY = `${STORAGE_PREFIX}theme`;
 
 export const MAX_QUESTIONS = 5000;
 
-const CURRENT_BACKUP_VERSION = 2;
+const CURRENT_BACKUP_VERSION = 3;
 
 function notifyLocalChange() {
   window.dispatchEvent(
@@ -117,14 +117,23 @@ function writeDirty(dirty) {
   return writeJson(getDirtyKey(), dirty);
 }
 
+// Tombstone retention: a delete stays recorded until ALL known devices
+// have acked it, approximated by a 7-day TTL. Clearing on first push
+// let a device that was offline during the delete window re-upload the
+// row and resurrect it.
+const TOMBSTONE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 function markDirty(section, id = null) {
   if (suppressDirty) return;
   const dirty = readDirty();
   if (section === "deletes") {
     if (!Array.isArray(dirty.deletes)) dirty.deletes = [];
     const signature = `${id.type}:${id.id}`;
-    if (!dirty.deletes.some((d) => `${d.type}:${d.id}` === signature)) {
-      dirty.deletes.push(id);
+    const existing = dirty.deletes.find((d) => `${d.type}:${d.id}` === signature);
+    if (existing) {
+      if (id.deletedAt) existing.deletedAt = id.deletedAt;
+    } else {
+      dirty.deletes.push({ type: id.type, id: String(id.id), deletedAt: id.deletedAt || Date.now() });
     }
   } else if (id == null) {
     dirty[section] = true;
@@ -138,7 +147,12 @@ function markDirty(section, id = null) {
 function clearDirty(section, ids = null) {
   const dirty = readDirty();
   if (section === "deletes") {
-    dirty.deletes = [];
+    if (ids == null) {
+      dirty.deletes = [];
+    } else {
+      const idSet = new Set(ids.map(String));
+      dirty.deletes = (dirty.deletes || []).filter((d) => !idSet.has(String(d.id)));
+    }
   } else if (ids == null) {
     dirty[section] = section === "examData" || section === "activity" ? {} : false;
   } else {
@@ -148,8 +162,36 @@ function clearDirty(section, ids = null) {
   writeDirty(dirty);
 }
 
+// Drop tombstones older than the TTL (their deletion is now safely
+// propagated; a re-creating device creating the SAME id is a genuine
+// new entity). Called on every dirty read.
+function pruneExpiredTombstones(dirty) {
+  if (!Array.isArray(dirty.deletes)) return dirty;
+  const cutoff = Date.now() - TOMBSTONE_TTL_MS;
+  const kept = dirty.deletes.filter((d) => {
+    const at = Number(d.deletedAt) || 0;
+    return at === 0 || at > cutoff;
+  });
+  if (kept.length !== dirty.deletes.length) {
+    dirty.deletes = kept;
+    writeDirty(dirty);
+  }
+  return dirty;
+}
+
 function hasDirtyChanges() {
   const d = readDirty();
+  pruneExpiredTombstones(d);
+  return hasDirtyChangesInner(d);
+}
+
+/**
+ * "Syncable" pending changes: real dirty sections, or tombstones that
+ * still need a delete pushed (never pushed = no deletedAt ack marker —
+ * we keep a pushedAt ack so the UI can report "synced" while tombstones
+ * continue filtering pulls).
+ */
+function hasDirtyChangesInner(d) {
   return (
     d.folders ||
     d.exams ||
@@ -158,17 +200,40 @@ function hasDirtyChanges() {
     d.tags ||
     Object.keys(d.examData).length > 0 ||
     Object.keys(d.activity).length > 0 ||
-    d.deletes.length > 0
+    (d.deletes || []).some((t) => !t.pushedAt)
   );
+}
+
+/** Mark all current tombstones as pushed (cloud delete acked). */
+export function markTombstonesPushed() {
+  const dirty = readDirty();
+  pruneExpiredTombstones(dirty);
+  let changed = false;
+  (dirty.deletes || []).forEach((t) => {
+    if (!t.pushedAt) {
+      t.pushedAt = Date.now();
+      changed = true;
+    }
+  });
+  if (changed) writeDirty(dirty);
 }
 
 function recordLocalDelete(type, id) {
   if (suppressDirty) return;
-  markDirty("deletes", { type, id: String(id) });
+  markDirty("deletes", { type, id: String(id), deletedAt: Date.now() });
   // A local delete also dirties the owning collection so the cloud
   // row for any resurrected/renamed entity is refreshed on next upload.
-  const owners = { folder: "folders", exam: "exams", tag: "tags" };
+  const owners = { folder: "folders", exam: "exams", tag: "tags", subject: "subjects" };
   markDirty(owners[type] || "folders", null);
+}
+
+/** Tombstoned ids per type — pull filters use this to avoid resurrection. */
+export function getDeletedIds(type) {
+  const dirty = readDirty();
+  pruneExpiredTombstones(dirty);
+  return (dirty.deletes || [])
+    .filter((d) => d.type === type)
+    .map((d) => String(d.id));
 }
 
 export function getDirtyState() {
@@ -590,6 +655,10 @@ export function deleteFolder(
     const exam of examsToDelete
   ) {
     removeExamData(exam.id);
+    // Child exams must be tombstoned too: they are removed locally but
+    // still exist in the cloud — without tombstones every pull would
+    // resurrect them as orphans.
+    recordLocalDelete("exam", exam.id);
   }
 
   recordLocalDelete("folder", folderId);
@@ -1073,7 +1142,7 @@ export function deleteSubject(subjectId) {
     saveFolders(updatedFolders);
   }
 
-  markDirty("subjects", subjectId);
+  recordLocalDelete("subject", subjectId);
   notifyLocalChange();
   return true;
 }
@@ -1310,6 +1379,10 @@ export function createBackup() {
     examData,
     subjects: getSubjects(),
     tags: getTags(),
+    // v3: daily activity — without it a restore loses the calendar,
+    // statistics and all study time (the only complete escape hatch
+    // must cover everything).
+    activity: getAllActivity().map(({ date, data }) => ({ date, data })),
   };
 }
 
@@ -1571,6 +1644,20 @@ export function restoreBackup(
       writeJson(getTagsKey(), migratedBackup.tags);
     }
 
+    // Restore daily activity (v3; optional for v1/v2 backups)
+    const restoredActivity = {};
+    if (
+      Array.isArray(migratedBackup.activity) &&
+      migratedBackup.activity.length > 0
+    ) {
+      migratedBackup.activity.forEach(({ date, data }) => {
+        if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) && isObject(data)) {
+          writeJson(getActivityKey(date), data);
+          restoredActivity[date] = true;
+        }
+      });
+    }
+
     // A restore replaces the whole local dataset: every entity is now
     // unsynced and must re-upload on the next sync.
     writeDirty({
@@ -1583,7 +1670,7 @@ export function restoreBackup(
         ])
       ),
       subjects: true,
-      activity: {},
+      activity: restoredActivity,
       settings: false,
       tags: Boolean(
         Array.isArray(migratedBackup.tags) && migratedBackup.tags.length > 0

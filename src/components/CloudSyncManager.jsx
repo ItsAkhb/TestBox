@@ -17,6 +17,7 @@ import {
   getDirtyState,
   clearDirtySection,
   hasPendingLocalChanges,
+  markTombstonesPushed,
   setStorageUser,
 } from "../services/dataService";
 
@@ -128,10 +129,18 @@ function CloudSyncManager() {
 
     await syncLocalToCloud(userId, { dirty });
 
+    // Tombstone ack: the push applied every cloud delete (idempotent).
+    // Tombstones themselves persist (TTL) so pulls keep filtering, but
+    // they stop counting as pending here.
     if (dirty.deletes.length > 0) {
-      // Tombstones carry no content that can change mid-push.
-      clearDirtySection("deletes");
+      markTombstonesPushed();
     }
+
+    // Tombstones are deliberately NOT cleared after a push. They persist
+    // until their 7-day TTL expires (pruned lazily on dirty reads) so a
+    // device that was offline during a delete window keeps filtering the
+    // deleted ids out of every pull instead of resurrecting them.
+    // Re-pushing tombstones is safe: cloud deletes are idempotent.
     if (before.folders !== null && fingerprint(getFolders()) === before.folders) {
       clearDirtySection("folders");
     }

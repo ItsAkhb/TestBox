@@ -16,6 +16,7 @@ import {
   saveSettings,
   getTags,
   saveTags,
+  getDeletedIds,
   getDirtyState,
   setDirtySuppression,
 } from "./dataService";
@@ -280,11 +281,10 @@ async function syncFolder(
       new Date().toISOString(),
   };
 
-  if (
-    schemaCapabilities.foldersSubjectId &&
-    folder.subjectId != null
-  ) {
-    row.subject_id = folder.subjectId;
+  if (schemaCapabilities.foldersSubjectId) {
+    // Explicitly write NULL when unassigned — omitting the key would
+    // leave the previous cloud value stale (unassign never propagated).
+    row.subject_id = folder.subjectId ?? null;
   }
 
   const { error } =
@@ -712,6 +712,18 @@ async function applyLocalDeletesToCloud(userId, deletes) {
   const tagDeletes = deletes
     .filter((d) => d && d.type === "tag")
     .map((d) => String(d.id));
+  const subjectDeletes = deletes
+    .filter((d) => d && d.type === "subject")
+    .map((d) => String(d.id));
+
+  if (subjectDeletes.length > 0 && schemaCapabilities.subjectsTable) {
+    const { error } = await supabase
+      .from("subjects")
+      .delete()
+      .eq("user_id", userId)
+      .in("id", subjectDeletes);
+    if (error) throw error;
+  }
 
   if (examDeletes.length > 0) {
     const { error } = await supabase
@@ -1278,13 +1290,20 @@ export async function syncCloudToLocal(
     if (schemaCapabilities.subjectsTable && !dirtyState.subjects) {
       const cloudSubjects = await getCloudSubjects(userId);
       if (cloudSubjects.length > 0) {
-        saveSubjects(
-          cloudSubjects.map((s) => ({
-            id: s.id,
-            name: s.name,
-            color: s.color ?? undefined,
-          }))
+        // Never re-adopt tombstoned subjects (deletion integrity).
+        const deletedSubjectIds = new Set(getDeletedIds("subject"));
+        const liveSubjects = cloudSubjects.filter(
+          (s) => !deletedSubjectIds.has(String(s.id))
         );
+        if (liveSubjects.length > 0) {
+          saveSubjects(
+            liveSubjects.map((s) => ({
+              id: s.id,
+              name: s.name,
+              color: s.color ?? undefined,
+            }))
+          );
+        }
       }
     }
 
@@ -1390,7 +1409,10 @@ export async function syncCloudToLocal(
 
     // Daily activity: per-day merge. A local day that is dirty wins
     // outright (uploaded later); cloud-only days are added; a clean
-    // local day is replaced by the cloud copy.
+    // local day is reconciled PER QUESTION KEY and studySeconds are
+    // UNIONED (max) — two devices recording the same day must both
+    // contribute instead of the last push wiping the other. This fixes
+    // the day-level last-writer-wins data-loss hole.
     if (schemaCapabilities.activityTable) {
       const cloudActivity = await getCloudActivity(userId);
       for (const day of cloudActivity) {
@@ -1398,10 +1420,14 @@ export async function syncCloudToLocal(
         const dayIsDirty = Boolean(dirtyState.activity?.[String(day.date)]);
         if (!localData) {
           saveActivity(day.date, day.payload);
-        } else if (!dayIsDirty && day.updated_at) {
-          saveActivity(day.date, day.payload);
+        } else if (dayIsDirty) {
+          // Dirty local day wins; it re-uploads on the next push.
+        } else {
+          const merged = mergeActivityDay(localData, day.payload);
+          if (merged) {
+            saveActivity(day.date, merged);
+          }
         }
-        // Dirty local day: keep local version; it re-uploads next push.
       }
     }
 
@@ -1427,7 +1453,10 @@ export async function syncCloudToLocal(
     // names/colors; dirty local tags win (re-uploaded on next push).
     // Local tags are never dropped (tag deletes are tombstoned).
     if (schemaCapabilities.tagsTable && !dirtyState.tags) {
-      const cloudTags = await getCloudTags(userId);
+      const deletedTagIds = new Set(getDeletedIds("tag"));
+      const cloudTags = (await getCloudTags(userId)).filter(
+        (tag) => !deletedTagIds.has(String(tag.id))
+      );
       const localTags = getTags();
       const cloudById = new Map(cloudTags.map((t) => [String(t.id), t]));
       const merged = localTags.map((tag) => {
@@ -1472,7 +1501,110 @@ export async function syncCloudToLocal(
  * a pull never removes local rows). Cloud adds new rows and refreshes
  * clean rows; a dirty local folder keeps its local field values.
  */
-function mergeFolders(localFolders, cloudFolders, dirtyState) {
+/**
+ * Reconcile one activity day between local and cloud. Both sides are
+ * clean (day not dirty), so neither is "newer" in a meaningful sense —
+ * instead of last-writer-wins, merge per question key:
+ *   - answeredKeys: union (per-question outcome; local wins on conflict
+ *     since the user is sitting here)
+ *   - counts: recomputed from the union so they can never double-count
+ *   - exams: unioned per examId; per-exam tallies recomputed from the
+ *     keys each side contributed
+ *   - studySeconds: max (study time is wall-clock union, never additive
+ *     across devices — max prevents both loss and double-count)
+ * Returns null when nothing changed (caller skips the write).
+ */
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeActivityDay(local, cloud) {
+  if (!isObject(local) || !isObject(cloud)) return null;
+
+  const localKeys = local.answeredKeys || {};
+  const cloudKeys = cloud.answeredKeys || {};
+  const mergedKeys = { ...cloudKeys, ...localKeys };
+
+  const localSig = JSON.stringify(localKeys);
+  const cloudSig = JSON.stringify(cloudKeys);
+  if (localSig === cloudSig && (local.studySeconds || 0) === (cloud.studySeconds || 0)) {
+    return null;
+  }
+
+  // Recompute per-exam tallies from the merged keys.
+  const examIndex = new Map();
+  const ensureExam = (meta) => {
+    const id = String(meta.examId);
+    if (!examIndex.has(id)) {
+      examIndex.set(id, {
+        examId: id,
+        name: meta.name || "",
+        folderId: meta.folderId ?? null,
+        subjectId: meta.subjectId ?? null,
+        solved: 0,
+        correct: 0,
+        wrong: 0,
+        unanswered: 0,
+        unresolved: 0,
+        completed: Boolean(meta.completed),
+        studySeconds: 0,
+      });
+    }
+    return examIndex.get(id);
+  };
+
+  (local.exams || []).forEach(ensureExam);
+  (cloud.exams || []).forEach(ensureExam);
+
+  Object.entries(mergedKeys).forEach(([key, outcome]) => {
+    const [examId] = key.split(":");
+    const entry = examIndex.get(String(examId));
+    if (!entry) return;
+    entry.solved += 1;
+    if (outcome === "correct") entry.correct += 1;
+    else if (outcome === "wrong") entry.wrong += 1;
+    else if (outcome === "unresolved") entry.unresolved += 1;
+    else entry.unanswered += 1;
+  });
+
+  const exams = [...examIndex.values()].map((entry) => ({
+    ...entry,
+    // studySeconds per exam: max of both sides (same union semantics)
+    studySeconds: Math.max(
+      Number((local.exams || []).find((e) => String(e.examId) === entry.examId)?.studySeconds) || 0,
+      Number((cloud.exams || []).find((e) => String(e.examId) === entry.examId)?.studySeconds) || 0
+    ),
+  }));
+
+  const totals = exams.reduce(
+    (acc, e) => ({
+      solved: acc.solved + e.solved,
+      correct: acc.correct + e.correct,
+      wrong: acc.wrong + e.wrong,
+      unanswered: acc.unanswered + e.unanswered,
+      unresolved: acc.unresolved + e.unresolved,
+    }),
+    { solved: 0, correct: 0, wrong: 0, unanswered: 0, unresolved: 0 }
+  );
+
+  return {
+    ...cloud,
+    ...totals,
+    studySeconds: Math.max(Number(local.studySeconds) || 0, Number(cloud.studySeconds) || 0),
+    answeredKeys: mergedKeys,
+    exams,
+  };
+}
+
+function mergeFolders(localFolders, incomingCloudFolders, dirtyState) {
+  // Tombstoned folders must never be re-adopted from the cloud — a
+  // stale device re-uploading them, or a pull racing the delete push,
+  // must not resurrect the deletion.
+  const deletedIds = new Set(getDeletedIds("folder"));
+  const cloudFolders = incomingCloudFolders.filter(
+    (folder) => !deletedIds.has(String(folder.id))
+  );
+
   const cloudById = new Map(
     cloudFolders.map((folder) => [String(folder.id), folder])
   );
@@ -1522,7 +1654,12 @@ function mergeFolders(localFolders, cloudFolders, dirtyState) {
  * dropped (deletes are tombstoned); clean exams adopt cloud config;
  * cloud-only exams are added.
  */
-function mergeExams(localExams, downloadableCloudExams) {
+function mergeExams(localExams, incomingCloudExams) {
+  const deletedIds = new Set(getDeletedIds("exam"));
+  const downloadableCloudExams = incomingCloudExams.filter(
+    (exam) => !deletedIds.has(String(exam.id))
+  );
+
   const cloudById = new Map(
     downloadableCloudExams.map((exam) => [String(exam.id), exam])
   );

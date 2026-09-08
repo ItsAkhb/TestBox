@@ -1,9 +1,33 @@
-# TestBox — Project State & Release Status (v2.1.1)
+# TestBox — Project State & Release Status (v2.1.2)
 
-## RELEASE STATUS: v2.1.1
+## RELEASE STATUS: v2.1.2
 
 **Last updated: 2026-09-05.** v2.0.0 history is in git history
 (`git log --follow PROJECT_STATE.md`).
+
+## What ships in v2.1.2 (on top of v2.1.1) — sync deletion integrity
+
+- **Tombstone model rework:** deletes are no longer cleared after one
+  push. Each tombstone carries deletedAt (+ pushedAt ack) and persists
+  7 days (lazy TTL prune) so devices offline during a delete window
+  filter the deleted ids out of every pull instead of resurrecting
+  them. Pull adoption of cloud rows is tombstone-aware for folders,
+  exams, subjects, tags and exam-questions-per-deleted-exam.
+- **Subject delete now actually syncs:** deleteSubject records a
+  tombstone; applyLocalDeletesToCloud removes it from the subjects
+  table. Previously there was NO cloud delete and the pull re-added
+  the subject (resurrection loop).
+- **Folder delete tombstones child exams:** they were removed locally
+  but never tombstoned — every pull resurrected them as orphans.
+- **Folder subject unassign writes NULL:** syncFolder previously
+  omitted subject_id when null, leaving the old cloud value stale.
+- **Activity day merge:** a clean day pulled from cloud reconciles per
+  question key (answeredKeys union, tallies recomputed, studySeconds
+  max) instead of last-writer-wins — two devices recording the same
+  day both contribute; no loss, no double-count.
+- **Backup v3:** daily activity included in export and restore
+  (calendar/stats/study time survive a restore); v1/v2 backups still
+  restore. Restored activity is marked dirty for re-upload.
 
 ## What ships in v2.1.1 (on top of v2.1.0)
 

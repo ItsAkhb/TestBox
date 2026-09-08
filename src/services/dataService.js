@@ -50,6 +50,8 @@ import {
   setQuestionTag,
   migrateMarkedToTags,
 
+  getDeletedIds,
+  markTombstonesPushed,
   getDirtyState,
   hasPendingLocalChanges,
   clearDirtySection,
@@ -109,6 +111,8 @@ export {
   setQuestionTag,
   migrateMarkedToTags,
 
+  getDeletedIds,
+  markTombstonesPushed,
   getDirtyState,
   hasPendingLocalChanges,
   clearDirtySection,
