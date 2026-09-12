@@ -6,7 +6,7 @@ import {
   updateSubject,
   deleteSubject,
   getFolders,
-} from "../services/dataService";
+generateId,} from "../services/dataService";
 import { useTranslation } from "../i18n";
 import { useToast } from "../context/ToastContext";
 import Icon from "../components/ui/Icon";
@@ -81,7 +81,7 @@ function Subjects() {
       showToast(t("subjects.updateSuccess"), "success");
     } else {
       const created = createSubject({
-        id: Date.now(),
+        id: generateId(),
         name,
         color: subjectColor,
       });

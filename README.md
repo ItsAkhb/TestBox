@@ -111,7 +111,7 @@ Never commit environment files or private keys to the repository.
 
 ## Current Status
 
-**v2.1.1 released.**
+**v2.1.3 released.**
 
 Implemented:
 

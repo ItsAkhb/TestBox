@@ -9,7 +9,7 @@ import {
   updateFolder,
   deleteFolder,
   getSubjects,
-} from "../services/dataService";
+generateId,} from "../services/dataService";
 import { useTranslation } from "../i18n";
 import { useToast } from "../context/ToastContext";
 import Icon from "../components/ui/Icon";
@@ -57,7 +57,7 @@ function Folders() {
     }
 
     const newFolder = {
-      id: Date.now(),
+      id: generateId(),
       name,
       subjectId: selectedSubjectId ? selectedSubjectId : null,
       createdAt:

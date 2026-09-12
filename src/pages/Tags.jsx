@@ -16,7 +16,7 @@ import {
   deleteTag,
   setQuestionTag,
   migrateMarkedToTags,
-} from "../services/dataService";
+generateId,} from "../services/dataService";
 import { useTranslation } from "../i18n";
 import { useToast } from "../context/ToastContext";
 import Icon from "../components/ui/Icon";
@@ -171,7 +171,7 @@ function Tags() {
       showToast(t("tags.updateSuccess"), "success");
     } else {
       const created = createTag({
-        id: Date.now(),
+        id: generateId(),
         name,
         color: tagColor,
       });

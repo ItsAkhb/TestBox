@@ -1,9 +1,41 @@
-# TestBox — Project State & Release Status (v2.1.2)
+# TestBox — Project State & Release Status (v2.1.3)
 
-## RELEASE STATUS: v2.1.2
+## RELEASE STATUS: v2.1.3
 
 **Last updated: 2026-09-05.** v2.0.0 history is in git history
 (`git log --follow PROJECT_STATE.md`).
+
+## What ships in v2.1.3 (on top of v2.1.2) — scheduler reliability & ID hardening
+
+- **Automatic-sync root cause fixed:** the retry chain decided "is there
+  work" from an ephemeral in-memory flag the sync loop consumes at
+  iteration start — after any failed cycle the retry became a silent
+  no-op and pending work stranded until an unrelated event kicked the
+  scheduler ("manual works, automatic doesn't"). Retries now consult the
+  DURABLE dirty registry, and an offline retry chain stays scheduled so
+  recovery self-heals even behind a dead gateway (navigator.onLine
+  never goes false).
+- **Reconciliation watchdog:** one central 3-minute tick +
+  visibility/online events: pending durable work → same sync cycle the
+  manual button uses (one engine, no second implementation); otherwise a
+  cheap HEAD count-probe (folders/exams/subjects/tags) pulls only when
+  cloud and local counts differ — cross-device convergence without any
+  manual action on the receiving device.
+- **Collision-resistant IDs:** entity IDs created with
+  generateId() = ms × 4096 + crypto-random tail with a per-session
+  monotonic bump (bigint-safe, inside Number.MAX_SAFE_INTEGER). Legacy
+  Date.now() ids stay valid and can never collide with new ones
+  (4096× magnitude gap). Verified: 200k-iteration zero-collision,
+  monotonic, cloud bigint-safe.
+- **Dev observability:** `window.__testboxSyncDebug()` (DEV builds
+  only) exposes status, pending types, retry count, offline — no
+  secrets.
+- Gates: invariants 20/20, failure-injection 12/12 (mid-upload failure
+  keeps pending state, restart survives, lost-ack replay idempotent,
+  coalescing safe). Live matrix without the manual button: create→
+  cloud, rename→cloud, delete→cloud + persistent tombstone (pushedAt
+  ack keeps pull-filter armed 7 days), other-device create pulled via
+  lifecycle reconcile, deleted folder NOT resurrected.
 
 ## What ships in v2.1.2 (on top of v2.1.1) — sync deletion integrity
 

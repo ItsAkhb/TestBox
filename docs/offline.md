@@ -24,7 +24,7 @@ testbox-{userId}-dirty = {
   folders, exams, subjects, settings: boolean,
   examData: { [examId]: true },
   activity: { [YYYY-MM-DD]: true },
-  deletes: [{ type: "folder"|"exam", id }]   // tombstones
+  deletes: [{ type, id, deletedAt, pushedAt? }]   // tombstones (7-day TTL)
 }
 ```
 
@@ -91,6 +91,18 @@ the app to "offline" on healthy networks; fixed in v2.0.0).
 - **Failures:** exponential backoff 5 s → 10 s → … → cap 5 min (ref-based,
   reset on success). Statuses: `idle` (logged out) | `syncing` | `synced` |
   `pending` | `offline` | `error`.
+- **Retry guard (v2.1.3):** "is there work" is decided by the DURABLE
+  dirty registry (`hasPendingLocalChanges()`), never only the ephemeral
+  in-memory flag — a failed cycle retries itself without waiting for an
+  unrelated event; offline retry chains stay scheduled (capped) so a
+  dead gateway (navigator.onLine stuck true) still self-heals.
+- **Reconciliation watchdog (v2.1.3):** a central 3-minute tick plus
+  visibility/online lifecycle events. Pending durable work runs the
+  same cycle as manual sync (single engine). Otherwise a cheap HEAD
+  count probe (4 requests) compares cloud vs local and pulls only on
+  difference — cross-device convergence needs no manual action.
+- **Dev/QA observability:** `window.__testboxSyncDebug()` in DEV builds
+  → status, pending types, retry count, offline flag. No secrets.
 
 ## Offline auth
 
@@ -103,16 +115,11 @@ real sign-out (user action while online) clears it.
 ## Schema capability probes
 
 `cloudSync.js` probes the live schema once per page load
-(`probeSchemaCapabilities()`) and gates new data types on the result. The
-current live schema has `folders`, `exams`, `exam_questions`; `subjects`,
-`daily_activity`, `user_settings` tables and extra columns (`subject_id`,
-`type`, `timer_duration`, `answer_key`, `exam_state`) do **not** exist yet.
-Until the migration SQL in `PROJECT_STATE.md` runs:
-
-- everything works locally and across login/logout,
-- the missing types are simply not synced (no errors surfaced to the user
-  beyond the silent probes),
-- the local data for those types is never touched by sync.
+(`probeSchemaCapabilities()`) and gates every synced data type on the
+result: if a table/column is missing the data still works fully local
+and is never damaged by sync. The live schema now contains all migrated
+pieces (subjects/daily_activity/user_settings/tags tables, the extra
+folders/exams columns, the unresolved status constraint).
 
 ## Stopwatch & stats safety
 

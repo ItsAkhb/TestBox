@@ -13,7 +13,7 @@ import {
   deleteExam,
   getExamDataKey,
   MAX_QUESTIONS,
-} from "../services/dataService";
+generateId,} from "../services/dataService";
 import { useTranslation } from "../i18n";
 import { useToast } from "../context/ToastContext";
 import { computeFormQuestionNumbers } from "../services/scoring";
@@ -460,7 +460,7 @@ function Folder() {
       }
     } else {
       const newExam = {
-        id: Date.now(),
+        id: generateId(),
 
         folderId:
           Number(id),

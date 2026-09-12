@@ -35,6 +35,12 @@ import { useSync } from "../context/SyncContext";
 const BACKOFF_BASE_MS = 5000;
 const BACKOFF_CAP_MS = 5 * 60 * 1000;
 
+// Periodic reconciliation watchdog interval. Long enough to stay cheap
+// (the online path is 2-4 HEAD count probes), short enough that a
+// missed event self-heals. Reconnect/visibility/local-mutation all
+// trigger sync immediately; this is the backstop.
+const WORK_CHECK_INTERVAL_MS = 3 * 60 * 1000;
+
 function computeBackoffMs(attempt) {
   return Math.min(BACKOFF_BASE_MS * 2 ** attempt, BACKOFF_CAP_MS);
 }
@@ -44,6 +50,7 @@ function CloudSyncManager() {
   const { user, isOffline } = useAuth();
 
   const {
+    syncStatus,
     setSyncStatus,
   } = useSync();
 
@@ -175,17 +182,40 @@ function CloudSyncManager() {
     }
   }, []);
 
+  const scheduleRetryRef = useRef(null);
+
   const scheduleRetry = useCallback(() => {
     clearBackoff();
     const delay = computeBackoffMs(backoffAttemptRef.current);
     backoffAttemptRef.current = Math.min(backoffAttemptRef.current + 1, 20);
     backoffTimerRef.current = setTimeout(() => {
       backoffTimerRef.current = null;
-      if (!offlineRef.current && pendingSyncRef.current) {
+      // Durability-first: "is there work" is decided by the DURABLE
+      // dirty registry, not only the ephemeral in-memory flag the sync
+      // loop consumes at iteration start. (The old check used
+      // pendingSyncRef alone — after a failed cycle it was false and
+      // the retry became a silent no-op, stranding pending work until
+      // an unrelated event kicked the scheduler. Root cause of
+      // "manual sync works, automatic sync doesn't".)
+      const hasWork = pendingSyncRef.current || hasPendingLocalChanges();
+      if (!hasWork) {
+        return;
+      }
+      if (!offlineRef.current) {
         syncLocalChangesRef.current?.();
+      } else {
+        // Offline with pending work: keep the chain alive so recovery
+        // is self-healing even if no connectivity transition ever
+        // fires (dead gateway keeps navigator.onLine true; the probe
+        // result is cached per page load). Capped so it never spins.
+        scheduleRetryRef.current?.();
       }
     }, delay);
   }, [clearBackoff]);
+
+  useEffect(() => {
+    scheduleRetryRef.current = scheduleRetry;
+  }, [scheduleRetry]);
 
 
 
@@ -587,6 +617,116 @@ function CloudSyncManager() {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOffline, user]);
+
+
+
+  // Periodic reconciliation watchdog (architecture fix, not a poll-for-
+  // polling's-sake loop): the durable dirty registry is the source of
+  // truth for "is there work", and the scheduler state is ephemeral
+  // (event listeners can be torn down by remounts, window events can be
+  // missed entirely). One central tick closes the gap:
+  //   - pending durable work → kick the same sync cycle manual sync
+  //     uses (identical engine, no second sync implementation)
+  //   - otherwise            → cheap count probe (4 HEAD requests);
+  //     pull only when cloud/local counts differ — cross-device
+  //     convergence without the other device pressing anything
+  useEffect(() => {
+    if (!user) return undefined;
+
+    let stopped = false;
+
+    async function reconcile() {
+      if (stopped || !user || syncingRef.current) return;
+      if (offlineRef.current || navigator.onLine === false) return;
+      if (hasPendingLocalChanges()) {
+        syncLocalChangesRef.current?.();
+        return;
+      }
+      // No local work: probe cloud counts vs local. Equal → idle.
+      try {
+        const uid = user.id;
+        const probe = async (table) => {
+          const { count, error } = await supabase
+            .from(table)
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", uid);
+          return error ? null : count ?? 0;
+        };
+        const [cloudFolders, cloudExams, cloudSubjects, cloudTags] =
+          await Promise.all([
+            probe("folders"),
+            probe("exams"),
+            // Missing tables probe as null → treated as "unknown", not
+            // a difference; no resurrection risk from a failed probe.
+            probe("subjects"),
+            probe("tags"),
+          ]);
+        if (cloudFolders === null && cloudExams === null) return;
+        const localFolders = getFolders().length;
+        const localExams = getExams().length;
+        const localSubjects = getSubjects().length;
+        const localTags = getTags().length;
+        const differs =
+          (cloudFolders !== null && cloudFolders !== localFolders) ||
+          (cloudExams !== null && cloudExams !== localExams) ||
+          (cloudSubjects !== null && cloudSubjects !== localSubjects) ||
+          (cloudTags !== null && cloudTags !== localTags);
+        if (differs && !stopped) {
+          syncLocalChangesRef.current?.();
+        }
+      } catch {
+        // reconciliation is opportunistic; next tick retries
+      }
+    }
+
+    const tick = () => reconcile();
+    const interval = setInterval(tick, WORK_CHECK_INTERVAL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    const onOnline = () => tick();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onOnline);
+    tick();
+
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [user]);
+
+
+
+  // Dev/QA observability: a safe, secret-free snapshot of the sync
+  // pipeline so failures can be diagnosed from state, not guesses.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    try {
+      window.__testboxSyncDebug = () => {
+        const d = getDirtyState();
+        const pendingTypes = Object.entries({
+          folders: d.folders,
+          exams: d.exams,
+          subjects: d.subjects,
+          settings: d.settings,
+          tags: d.tags,
+          examData: Object.keys(d.examData).length,
+          activity: Object.keys(d.activity).length,
+          deletes: d.deletes.length,
+        }).filter(([, v]) => v === true || (typeof v === "number" && v > 0));
+        return {
+          status: syncStatus,
+          pendingTypes,
+          retry: backoffAttemptRef.current,
+          offline: offlineRef.current,
+        };
+      };
+    } catch {
+      // observability must never break sync
+    }
+  });
 
 
 

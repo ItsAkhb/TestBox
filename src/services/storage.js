@@ -69,6 +69,28 @@ function notifyLocalChange() {
   );
 }
 
+// Collision-resistant local entity ID. Cloud columns are bigint, so
+// UUID text is not an option without rewriting every table and every
+// existing user's IDs. Instead: millisecond * 4096 + a random tail,
+// with a per-session monotonic bump so ids never repeat within a
+// session (even in a tight creation loop). The magnitude (~7e15) stays
+// inside Number.MAX_SAFE_INTEGER so all arithmetic is exact integer.
+// Two devices creating in the same millisecond collide with p≈1/4096
+// (vs ~certain for same-millisecond Date.now()); legacy Date.now()
+// IDs (~1.8e12) are ~4096x smaller than new ones (~7e15) so old and
+// new can never collide. Strictly increasing within a session.
+let lastGeneratedId = 0;
+export function generateId() {
+  const rand =
+    (typeof crypto !== "undefined" && crypto.getRandomValues
+      ? crypto.getRandomValues(new Uint32Array(1))[0]
+      : Math.floor(Math.random() * 0x100000000)) % 4096;
+  let id = Date.now() * 4096 + rand;
+  if (id <= lastGeneratedId) id = lastGeneratedId + 1;
+  lastGeneratedId = id;
+  return id;
+}
+
 // =========================================================
 // Dirty Tracking (offline-first)
 //
@@ -1300,7 +1322,7 @@ export function migrateMarkedToTags() {
 
   let markedTag = tags.find((t) => t.name === "__marked__");
   if (!markedTag) {
-    markedTag = { id: Date.now(), name: "__marked__" };
+    markedTag = { id: generateId(), name: "__marked__" };
     saveTags([...tags, markedTag]);
   }
 

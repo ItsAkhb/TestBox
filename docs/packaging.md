@@ -1,11 +1,11 @@
 # Packaging: Windows (Electron) & Android (Capacitor)
 
-TestBox v2.1.1 ships three ways from one codebase:
+TestBox v2.1.3 ships three ways from one codebase:
 
 | Platform | Wrapper | Output | Config |
 |---|---|---|---|
 | Web | none (Vite static site) | `dist/` → GitHub Pages | `vite.config.js` |
-| Windows | Electron 44 | `release/TestBox-Setup-2.1.1.exe`, `release/TestBox-Portable-2.1.1.exe` | `electron-builder.json5` |
+| Windows | Electron 44 | `release/TestBox-Setup-2.1.3.exe`, `release/TestBox-Portable-2.1.3.exe` | `electron-builder.json5` |
 | Android | Capacitor 7 | `android/app/build/outputs/apk/release/app-release.apk` | `capacitor.config.json` |
 
 ## Rationale
@@ -40,9 +40,9 @@ npm run dist:win       # build:packaged + electron-builder --win
 
 Outputs in `release/` (gitignored):
 
-- `TestBox-Setup-2.1.1.exe` — NSIS installer x64 (user-chosen install dir,
+- `TestBox-Setup-2.1.3.exe` — NSIS installer x64 (user-chosen install dir,
   desktop + Start-menu shortcuts)
-- `TestBox-Portable-2.1.1.exe` — standalone portable x64
+- `TestBox-Portable-2.1.3.exe` — standalone portable x64
 
 Details:
 
@@ -111,10 +111,10 @@ Output: `android/app/build/outputs/apk/release/app-release.apk`.
 
 - No code-signing certificate for Windows (SmartScreen may warn on first run).
 - Single-bundle web build (>500 kB advisory); code-splitting is a later task.
-- Cloud sync of subjects/activity/settings is capability-gated: the tables
-  (`subjects`, `daily_activity`, `user_settings`, `folders.subject_id`, …)
-  don't exist in the live Supabase schema yet. Local data is fully preserved;
-  see `docs/offline.md` and the migration SQL in `PROJECT_STATE.md`.
+- Cloud sync is capability-gated by design: each data type syncs only when
+  its table/column exists, so an incomplete schema never damages local data.
+  The live Supabase schema has all pieces below applied (as of v2.1.2); the
+  migration is re-runnable (`if not exists`/`if exists`) for a fresh project.
 
 ## Supabase schema migration (full cross-device sync)
 
