@@ -129,4 +129,15 @@ In progress / planned:
 
 ## License
 
-This project is currently a personal project and is not licensed for redistribution.
+**TestBox is source-available software and is licensed for non-commercial use only.**
+
+You may use, copy, modify, and redistribute TestBox for personal, educational, research, and other non-commercial purposes, provided that the original copyright notice and license are retained.
+
+**Commercial use is not permitted without prior written permission from the copyright holder.** This includes selling TestBox or modified versions, incorporating it into a commercial product or service, offering it as a paid or monetized service, or otherwise using it for commercial benefit.
+
+The name **TestBox**, its logo, branding, and other project-specific trademarks are not included in the permissions granted by this license.
+
+See the [`LICENSE`](LICENSE) file for the complete terms.
+
+**Copyright (c) 2026 Ali Khatibi**
+
