@@ -115,7 +115,15 @@ Never commit environment files or private keys to the repository.
 
 ## Current Status
 
-**v2.2.0-beta.1 released.**
+**v2.2.0-beta.2 released.**
+
+What's new in v2.2.0-beta.2 (stabilization before leaving beta):
+
+* **Reliable Windows Google sign-in** — the OAuth return URL is buffered in the Electron preload until the app consumes it, so a PKCE code arriving during boot is never dropped
+* **Android Google sign-in in a Custom Tab** — `@capacitor/browser` opens the native Google account screen when the Google app is installed, instead of a generic browser
+* **Persian-friendly name inputs** — folder/subject/exam create + rename fields use `dir="auto"`, a 16px touch font (no Android auto-zoom), and a top-aligned modal that stays visible above the keyboard
+* **Status bar clearance** — the TopBar starts below the Android status bar via safe-area insets
+* **Weather stays visible on mobile** — icon + temperature remain in the TopBar on small screens instead of hiding
 
 What's new in v2.2.0-beta.1:
 

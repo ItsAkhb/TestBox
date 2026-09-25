@@ -1,19 +1,21 @@
 # Packaging: Windows (Electron) & Android (Capacitor)
 
-TestBox v2.2.0-beta.1 ships three ways from one codebase:
+TestBox v2.2.0-beta.2 ships three ways from one codebase:
 
 | Platform | Wrapper | Output | Config |
 |---|---|---|---|
 | Web | none (Vite static site) | `dist/` → GitHub Pages | `vite.config.js` |
-| Windows | Electron 44 | `release/TestBox-Setup-2.2.0-beta.1.exe` (this release ships the NSIS installer only; the portable target stays in the config for future builds) | `electron-builder.json5` |
+| Windows | Electron 44 | `release/TestBox-Setup-2.2.0-beta.2.exe` (this release ships the NSIS installer only; the portable target stays in the config for future builds) | `electron-builder.json5` |
 | Android | Capacitor 7 | `android/app/build/outputs/apk/release/app-release.apk` | `capacitor.config.json` |
 
 ## Rationale
 
 - **Electron** gives Windows users a real installed app (Start-menu shortcut,
   taskbar icon, no browser chrome). The renderer is the exact web UI; the main
-  process is ~60 lines with `nodeIntegration: false`, `contextIsolation: true`,
-  `sandbox: true`, no preload and no IPC — the app is a static page in a frame.
+  process runs with `nodeIntegration: false`, `contextIsolation: true`,
+  `sandbox: true` and a minimal `preload.cjs` bridge (close-to-tray, tray wake,
+  OAuth callback delivery) — the app itself is a static page in a frame and no
+  renderer code touches Node directly.
 - **Capacitor** wraps the same static bundle in a system WebView for Android,
   adding the hardware back-button handling (`src/services/native.js`) and
   splash/status-bar presentation. No native plugins touch app data; all
@@ -40,10 +42,10 @@ npm run dist:win       # build:packaged + electron-builder --win
 
 Outputs in `release/` (gitignored):
 
-- `TestBox-Setup-2.2.0-beta.1.exe` — NSIS installer x64 (user-chosen install dir,
+- `TestBox-Setup-2.2.0-beta.2.exe` — NSIS installer x64 (user-chosen install dir,
   desktop + Start-menu shortcuts)
-- `TestBox-Portable-2.2.0-beta.1.exe` — standalone portable x64 (built only when
-  the portable target is requested; not shipped in v2.2.0-beta.1)
+- `TestBox-Portable-2.2.0-beta.2.exe` — standalone portable x64 (built only when
+  the portable target is requested; not shipped in v2.2.0-beta.2)
 
 Details:
 
@@ -220,8 +222,8 @@ The client never holds the Google Client Secret — it stays in Supabase only.
 | Platform | Flow |
 |---|---|
 | Web | `signInWithOAuth` → Google → Supabase → `?code=` on the allowed redirect → PKCE exchange (`detectSessionInUrl`). HashRouter-safe (code is in the query, not the hash). |
-| Windows/Electron | OAuth opens in the **system browser**; Supabase redirects to `testbox://auth/callback?code=…`. Main process registers the `testbox` protocol and forwards the URL to the renderer for exchange. Requires a packaged install (protocol registration is best-effort in bare `electron .` dev). |
-| Android | Same custom scheme `testbox://auth/callback` via `AndroidManifest` intent-filter + Capacitor `appUrlOpen`. Rebuild the native project after manifest changes (`npx cap sync android`). |
+| Windows/Electron | OAuth opens in the **system browser**; Supabase redirects to `testbox://auth/callback?code=…`. Main process registers the `testbox` protocol and forwards the URL to the renderer, where the preload **buffers** it until consumed — a code sent before React mounts is never dropped. Requires a packaged install (protocol registration is best-effort in bare `electron .` dev). |
+| Android | Google sign-in opens in a **Chrome Custom Tab** (`@capacitor/browser`) — the native Google account screen appears when the Google app is installed. Return is the same custom scheme `testbox://auth/callback` via `AndroidManifest` intent-filter + Capacitor `appUrlOpen`. Rebuild the native project after plugin/manifest changes (`npx cap sync android`). |
 
 ### Manual verification checklist (not automated)
 
