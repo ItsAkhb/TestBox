@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useTranslation } from "../../i18n";
 import Icon from "../ui/Icon";
+import Badge from "../ui/Badge";
 import {
   gregorianToJalali,
   JALALI_MONTH_NAMES_FA,
@@ -10,7 +12,23 @@ import {
   WEEKDAY_NAMES_EN,
 } from "../../utils/date";
 import { getDayReport } from "../../services/activityTracker";
+import { getExams, getExamData } from "../../services/dataService";
 import { formatHMS } from "../../hooks/useStopwatch";
+
+// Exam rows link to their results only when both the exam record and its
+// persisted data exist — otherwise the route would dead-end on "not found".
+function canLinkToResults(examId) {
+  try {
+    const exams = getExams();
+    const exam = Array.isArray(exams)
+      ? exams.find((item) => String(item.id) === String(examId))
+      : null;
+    if (!exam) return false;
+    return Boolean(getExamData(examId));
+  } catch {
+    return false;
+  }
+}
 
 export default function DayDetail({ date, data }) {
   const { t, language } = useTranslation();
@@ -145,33 +163,55 @@ export default function DayDetail({ date, data }) {
                                 {folder.solved}
                               </span>
                             </div>
-                            {folder.exams.map((exam) => (
-                              <div key={exam.examId} className="day-detail-exam-row">
-                                <span className="day-detail-exam-name">
+                            {folder.exams.map((exam) => {
+                              const linked = canLinkToResults(exam.examId);
+                              const nameNode = (
+                                <>
                                   <Icon name="fileText" size={14} />
                                   {exam.name}
                                   {exam.completed && (
-                                    <span
+                                    <Badge
+                                      variant="success"
+                                      size="sm"
                                       className="day-detail-completed-badge"
                                       title={t("exam.results.completed")}
                                     >
                                       <Icon name="check" size={11} />
+                                    </Badge>
+                                  )}
+                                </>
+                              );
+
+                              return (
+                                <div key={exam.examId} className="day-detail-exam-row">
+                                  {linked ? (
+                                    <Link
+                                      className="day-detail-exam-name is-link"
+                                      to={`/exam/${exam.examId}/results`}
+                                      state={{ dayDate: date }}
+                                      aria-label={`${exam.name} — ${t("exam.results.title")}`}
+                                    >
+                                      {nameNode}
+                                    </Link>
+                                  ) : (
+                                    <span className="day-detail-exam-name">
+                                      {nameNode}
                                     </span>
                                   )}
-                                </span>
-                                <span className="day-detail-exam-count">
-                                  <strong>{exam.solved}</strong>
-                                  <span className="day-detail-delta correct">
-                                    <Icon name="check" size={11} />
-                                    {exam.correct}
+                                  <span className="day-detail-exam-count">
+                                    <strong>{exam.solved}</strong>
+                                    <span className="day-detail-delta correct">
+                                      <Icon name="check" size={11} />
+                                      {exam.correct}
+                                    </span>
+                                    <span className="day-detail-delta wrong">
+                                      <Icon name="close" size={11} />
+                                      {exam.wrong}
+                                    </span>
                                   </span>
-                                  <span className="day-detail-delta wrong">
-                                    <Icon name="close" size={11} />
-                                    {exam.wrong}
-                                  </span>
-                                </span>
-                              </div>
-                            ))}
+                                </div>
+                              );
+                            })}
                           </div>
                         ))}
                       </div>

@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { useSync } from "../../context/SyncContext";
 import { useSession } from "../../context/SessionContext";
 import { useTranslation } from "../../i18n";
 import { useSettings } from "../../context/SettingsContext";
 import { useAuth } from "../../context/AuthContext";
+import { useOfflineMode } from "../../context/OfflineModeContext";
 import { fetchWeather } from "../../services/weather";
+import { shouldShowTopbarSession } from "../../services/timerUi";
+import { useTheme } from "../../theme/useTheme";
 import Icon from "../ui/Icon";
+import Badge from "../ui/Badge";
 
 // Pure: seconds → "h:mm:ss" / "mm:ss"
 function formatCountdown(totalSeconds) {
@@ -33,28 +38,51 @@ function weatherIconName(code, isDay) {
 
 export default function TopBar() {
   const { syncStatus } = useSync();
-  const { session } = useSession();
+  const { session, focusTimerVisible } = useSession();
   const { t, language, setLanguage, formatDate } = useTranslation();
   const { settings } = useSettings();
-  const { user } = useAuth();
+  const { user, authState } = useAuth();
+  const { manualOffline, goOnline } = useOfflineMode();
+  const { preference: themeMode, setTheme } = useTheme();
   const location = useLocation();
+  const navigate = useNavigate();
   const onExamPage = /^\/exam\/[^/]+\/?$/.test(location.pathname);
+
+  // Display-only mirror of the Exam page's single timer engine: appears
+  // when the in-page focus timer scrolls out of view or the user leaves
+  // the exam route. Never two independent countdowns.
+  const showSession = shouldShowTopbarSession({
+    session,
+    onExamPage,
+    focusTimerVisible,
+  });
+
+  // Return to the exact active attempt (never /start — that path can
+  // begin a fresh session). The Exam route restores examState + timer
+  // persistence for the same examId.
+  function handleSessionClick() {
+    if (!session?.examId) return;
+    navigate(`/exam/${session.examId}`);
+  }
 
   const [time, setTime] = useState(() => new Date());
   const [weather, setWeather] = useState(null);
-  const [darkMode, setDarkMode] = useState(() => {
-    return localStorage.getItem("testbox-theme") === "dark";
-  });
+
+  // Cycle System → Light → Dark → System (single module owns persistence
+  // and data-theme; this button only advances the preference).
+  function cycleTheme() {
+    const order = ["system", "light", "dark"];
+    const next = order[(order.indexOf(themeMode) + 1) % order.length];
+    setTheme(next);
+  }
+
+  const themeIconName =
+    themeMode === "system" ? "monitor" : themeMode === "light" ? "sun" : "moon";
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light");
-    localStorage.setItem("testbox-theme", darkMode ? "dark" : "light");
-  }, [darkMode]);
 
   useEffect(() => {
     const loc = settings?.weatherLocation;
@@ -72,10 +100,16 @@ export default function TopBar() {
   // listens on — the orchestrator's own offline/backoff guards decide
   // whether a cycle runs. Clicking never bypasses data safety.
   function handleManualSync() {
+    if (manualOffline) return;
     if (!user) return;
     if (syncStatus === "syncing") return;
     window.dispatchEvent(new CustomEvent("testbox-local-change"));
   }
+
+  const authBadge =
+    authState && authState !== "authenticated" && authState !== "unknown"
+      ? t(`auth.state.${authState}`)
+      : null;
 
   return (
     <header className="topbar">
@@ -94,39 +128,86 @@ export default function TopBar() {
           </span>
         </span>
 
-        <button
-          key={syncStatus}
-          type="button"
-          className={`topbar-sync sync-${syncStatus}`}
-          title={
-            syncStatus === "offline" || syncStatus === "idle"
-              ? t(`sync.${syncStatus}`)
-              : `${t(`sync.${syncStatus}`)} — ${t("sync.manual")}`
-          }
-          onClick={handleManualSync}
-          aria-label={`${t(`sync.${syncStatus}`)} — ${t("sync.manual")}`}
-        >
-          <span className="sync-dot" />
-          {syncStatus !== "idle" && <span className="sync-text">{t(`sync.${syncStatus}`)}</span>}
-        </button>
+        {manualOffline ? (
+          <button
+            type="button"
+            className="topbar-sync sync-offlineMode"
+            title={t("offline.mode.goOnline")}
+            aria-label={t("offline.mode.goOnline")}
+            onClick={goOnline}
+          >
+            <span className="sync-dot" />
+            <span className="sync-text">{t("sync.offlineMode")}</span>
+          </button>
+        ) : (
+          <button
+            key={syncStatus}
+            type="button"
+            className={`topbar-sync sync-${syncStatus}`}
+            title={
+              syncStatus === "offline" || syncStatus === "idle"
+                ? t(`sync.${syncStatus}`)
+                : `${t(`sync.${syncStatus}`)} — ${t("sync.manual")}`
+            }
+            onClick={handleManualSync}
+            aria-label={`${t(`sync.${syncStatus}`)} — ${t("sync.manual")}`}
+          >
+            <span className="sync-dot" />
+            {syncStatus !== "idle" && <span className="sync-text">{t(`sync.${syncStatus}`)}</span>}
+          </button>
+        )}
+
+        {authBadge && (
+          <Badge
+            variant={
+              authState === "needs_revalidation"
+                ? "warning"
+                : authState === "logged_out"
+                  ? "danger"
+                  : "muted"
+            }
+            size="sm"
+            className={`topbar-auth-badge auth-${authState}`}
+            title={authBadge}
+            aria-label={authBadge}
+          >
+            <span className="topbar-auth-badge-text">{authBadge}</span>
+          </Badge>
+        )}
 
         {/* Active exam timer / practice stopwatch — mirrored from the
-            Exam page's own engines; hidden on the exam page itself to
-            avoid a duplicate next to the focusbar timer. */}
-        {session && !onExamPage && (
-          <span
-            className={`topbar-session is-${session.kind} ${session.running === false ? "is-paused" : ""}`}
-            role="timer"
-            title={session.label}
-          >
-            <Icon name={session.kind === "exam" ? "timer" : "play"} size={13} />
-            <span className="topbar-session-time num">
-              {session.kind === "exam"
-                ? formatCountdown(session.remainingSeconds)
-                : formatCountdown(Math.floor(session.elapsedMs / 1000))}
-            </span>
-          </span>
-        )}
+            Exam page's own engines; docked into the TopBar when the
+            in-page focus timer is off-screen or the exam route is left.
+            Click restores that exact exam session (examId), never /start. */}
+        <AnimatePresence initial={false}>
+          {showSession && session && (
+            <motion.span
+              key="topbar-session"
+              className={`topbar-session is-${session.kind} ${session.running === false ? "is-paused" : ""}`}
+              role="timer"
+              title={session.label}
+              onClick={handleSessionClick}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  handleSessionClick();
+                }
+              }}
+              tabIndex={session.examId ? 0 : -1}
+              initial={{ opacity: 0, y: -8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.96 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <Icon name={session.kind === "exam" ? "timer" : "play"} size={13} />
+              <span className="topbar-session-time num">
+                {session.kind === "exam"
+                  ? formatCountdown(session.remainingSeconds)
+                  : formatCountdown(Math.floor(session.elapsedMs / 1000))}
+              </span>
+            </motion.span>
+          )}
+        </AnimatePresence>
 
       </div>
 
@@ -135,8 +216,8 @@ export default function TopBar() {
           type="button"
           className="topbar-btn topbar-lang-btn"
           onClick={() => setLanguage(language === "fa" ? "en" : "fa")}
-          title={language === "fa" ? "Switch to English" : "تغییر به فارسی"}
-          aria-label={language === "fa" ? "Switch to English" : "تغییر به فارسی"}
+          title={t("topbar.switchLanguage")}
+          aria-label={t("topbar.switchLanguage")}
         >
           {language === "fa" ? "EN" : "فا"}
         </button>
@@ -144,17 +225,17 @@ export default function TopBar() {
         <button
           type="button"
           className="topbar-btn"
-          onClick={() => setDarkMode((prev) => !prev)}
-          title={darkMode ? "Light" : "Dark"}
-          aria-label="Toggle theme"
+          onClick={cycleTheme}
+          title={`${t("topbar.toggleTheme")} — ${t(`theme.${themeMode}`)}`}
+          aria-label={`${t("topbar.toggleTheme")} — ${t(`theme.${themeMode}`)}`}
         >
-          <Icon name={darkMode ? "sun" : "moon"} size={17} />
+          <Icon name={themeIconName} size={17} />
         </button>
 
         <Link
-          to={user ? "/account" : "/login"}
+          to={user ? "/settings" : "/login"}
           className="topbar-account"
-          aria-label={user ? t("nav.account") : t("nav.login")}
+          aria-label={user ? t("nav.settings") : t("nav.login")}
         >
           <span className="account-avatar" aria-hidden="true">
             {(user?.email?.[0] || "T").toUpperCase()}

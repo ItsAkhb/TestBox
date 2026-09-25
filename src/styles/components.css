@@ -80,42 +80,6 @@
 }
 
 
-/* =========================================================
-   Sections
-========================================================= */
-
-.recent-section {
-  width: 100%;
-  max-width: 1100px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  gap: 18px;
-
-  margin-bottom: 15px;
-}
-
-.section-header h2 {
-  margin: 0 0 4px;
-
-  color: var(--text);
-
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.section-header p {
-  margin: 0;
-
-  color: var(--muted);
-
-  font-size: 13px;
-}
-
 
 /* =========================================================
    Buttons
@@ -393,6 +357,15 @@
 .exam-list-card:hover {
   border-color: var(--border-hover);
   box-shadow: var(--shadow-md);
+}
+
+.exam-list-card:has(.exam-list-active-badge) {
+  border-color: var(--primary);
+}
+
+.exam-list-active-badge {
+  margin-inline-start: 8px;
+  vertical-align: middle;
 }
 
 .exam-list-main {
@@ -814,7 +787,7 @@ html[dir="ltr"] .modal input { direction: ltr; }
 .toggle-switch:hover {
   box-shadow:
     0 0 0 4px
-    rgb(99 102 241 / 8%);
+    color-mix(in srgb, var(--primary) 8%, transparent);
 }
 
 .toggle-switch.active {
@@ -829,7 +802,7 @@ html[dir="ltr"] .modal input { direction: ltr; }
   top:
     3px;
 
-  right:
+  inset-inline-end:
     3px;
 
   width:
@@ -854,7 +827,12 @@ html[dir="ltr"] .modal input { direction: ltr; }
 
 .toggle-switch.active .toggle-knob {
   transform:
-    translateX(-22px);
+    translateX(calc(-1 * (100% + 2px)));
+}
+
+html[dir="rtl"] .toggle-switch.active .toggle-knob {
+  transform:
+    translateX(calc(1 * (100% + 2px)));
 }
 
 
@@ -1185,10 +1163,13 @@ html[dir="ltr"] .modal input { direction: ltr; }
    Settings
 ========================================================= */
 
+/* Settings card family — shares the card recipe with folder/subject
+   tiles: rest border var(--divider), radius-lg, 16px/18px padding,
+   surface background. Grouped sections stay non-hoverable (not tiles). */
 .settings-section,
 .settings-danger {
   padding:
-    18px;
+    16px 18px;
 
   margin-bottom:
     14px;
@@ -1197,7 +1178,7 @@ html[dir="ltr"] .modal input { direction: ltr; }
     var(--surface);
 
   border:
-    1px solid var(--border);
+    1px solid var(--divider);
 
   border-radius:
     var(--radius-lg);
@@ -1286,6 +1267,14 @@ html[dir="ltr"] .modal input { direction: ltr; }
 
   background:
     var(--surface);
+}
+
+.settings-action.is-active {
+  border-color:
+    var(--primary);
+
+  background:
+    var(--primary-soft);
 }
 
 .settings-action-icon {
@@ -1609,6 +1598,31 @@ textarea:focus-visible {
 }
 
 
+.auth-google {
+  width: 100%;
+  margin-top: 4px;
+}
+
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+
 .auth-footer {
   margin-top: 20px;
 
@@ -1624,6 +1638,47 @@ textarea:focus-visible {
   display: inline-flex;
 
   margin-right: 6px;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  inset-inline-end: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 32px;
+  height: 32px;
+  padding: 0;
+
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.auth-password-toggle:hover {
+  color: var(--text);
+}
+
+.auth-password-wrap {
+  position: relative;
+  display: flex;
+}
+
+.auth-password-wrap input {
+  width: 100%;
+  padding-inline-end: 42px;
+}
+
+@media (max-width: 600px) {
+  .auth-form input {
+    font-size: 16px;
+  }
 }
 
 
@@ -1835,7 +1890,9 @@ textarea:focus-visible {
 }
 
 .toast-message {
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 @keyframes toastSlideIn {
@@ -1858,151 +1915,6 @@ textarea:focus-visible {
   }
 }
 
-/* =========================================================
-   TopBar Enhancements
-========================================================= */
-
-.topbar-left {
-  display: flex;
-  align-items: center;
-
-  gap: 12px;
-}
-
-.topbar-right {
-  display: flex;
-  align-items: center;
-
-  gap: 10px;
-}
-
-.lang-toggle {
-  padding: 6px 10px;
-
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-
-  background: var(--surface);
-  color: var(--text-secondary);
-
-  cursor: pointer;
-
-  font-size: 12px;
-  font-weight: 600;
-
-  transition:
-    border-color var(--transition),
-    background var(--transition),
-    color var(--transition);
-}
-
-.lang-toggle:hover {
-  border-color: var(--primary);
-  color: var(--primary);
-  background: var(--primary-soft);
-}
-
-.weather-widget {
-  display: flex;
-  align-items: center;
-
-  gap: 4px;
-
-  padding: 5px 10px;
-
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-
-  background: var(--surface);
-
-  font-size: 12px;
-  color: var(--text-secondary);
-
-  cursor: default;
-}
-
-.weather-icon {
-  font-size: 15px;
-}
-
-.weather-temp {
-  font-weight: 600;
-}
-
-.topbar-datetime {
-  display: flex;
-  flex-direction: column;
-
-  gap: 1px;
-
-  font-size: 12px;
-  line-height: 1.2;
-}
-
-.topbar-time {
-  color: var(--text);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.topbar-date {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-/* =========================================================
-   Sync Indicator
-========================================================= */
-
-.sync-indicator {
-  display: flex;
-  align-items: center;
-
-  gap: 6px;
-
-  padding: 5px 10px;
-
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-
-  background: var(--surface);
-
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.sync-dot {
-  width: 8px;
-  height: 8px;
-
-  border-radius: 50%;
-
-  background: var(--muted);
-
-  transition: background 0.3s ease;
-}
-
-.sync-syncing .sync-dot {
-  background: var(--primary);
-  animation: syncPulse 1.2s ease infinite;
-}
-
-.sync-synced .sync-dot {
-  background: var(--success);
-}
-
-.sync-error .sync-dot {
-  background: var(--danger);
-}
-
-.sync-text {
-  white-space: nowrap;
-}
-
-@keyframes syncPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
 
 /* =========================================================
    Toggle Row (for settings-like toggles)
@@ -2122,6 +2034,14 @@ textarea:focus-visible {
   line-height: 1.7;
 }
 
+.confirm-error {
+  margin: -8px 0 16px;
+
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 /* =========================================================
    Button Enhancements
 ========================================================= */
@@ -2192,6 +2112,20 @@ textarea:focus-visible {
 .btn-loading {
   cursor: progress;
   opacity: 0.8;
+}
+
+button:disabled:not(:disabled),
+button.btn-loading:disabled {
+  cursor: not-allowed;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled,
+.danger-button:disabled,
+.ghost-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 @keyframes btn-spin {
@@ -2340,31 +2274,12 @@ textarea:focus-visible {
 .ui-badge-dot-indicator {
   width: 6px;
   height: 6px;
+  min-width: 6px;
+  min-height: 6px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
   border-radius: 50%;
   background: currentColor;
-}
-
-/* =========================================================
-   Mobile TopBar Adjustments
-========================================================= */
-
-@media (max-width: 600px) {
-  .topbar-datetime {
-    display: none;
-  }
-
-  .weather-widget {
-    display: none;
-  }
-
-  .sync-indicator .sync-text {
-    display: none;
-  }
-
-  .topbar-left,
-  .topbar-right {
-    gap: 6px;
-  }
 }
 
 /* =========================================================
@@ -2434,6 +2349,7 @@ textarea:focus-visible {
   padding: 4px 6px;
   border-radius: 6px;
   transition: background 0.12s ease;
+  min-width: 0;
 }
 
 .answer-key-row:hover {
@@ -2452,12 +2368,17 @@ textarea:focus-visible {
 
 .answer-key-options {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
+  min-width: 0;
 }
 
 .answer-key-btn {
   width: 30px;
   height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   border: 1px solid var(--border);
@@ -2468,6 +2389,31 @@ textarea:focus-visible {
   font-size: 12px;
   font-weight: 600;
   transition: all 0.12s ease;
+}
+
+@media (max-width: 600px) {
+  .answer-key-btn {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+    font-size: 11px;
+  }
+
+  .answer-key-qnum {
+    width: 30px;
+  }
+
+  .answer-key-row {
+    gap: 5px;
+    padding: 3px 4px;
+  }
+
+  .answer-key-bulk .secondary-button {
+    min-height: 32px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
 }
 
 .answer-key-btn:hover {
@@ -2498,12 +2444,6 @@ textarea:focus-visible {
 /* =========================================================
    Subjects
 ========================================================= */
-
-.subjects-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
 
 .subject-card {
   position: relative;
@@ -2600,6 +2540,10 @@ textarea:focus-visible {
 .color-option {
   width: 28px;
   height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
   padding: 0;
   border: 2px solid transparent;
   border-radius: 50%;
@@ -2721,17 +2665,7 @@ textarea:focus-visible {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
 }
 
-@media (max-width: 1100px) {
-  .subjects-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 600px) {
-  .subjects-grid {
-    grid-template-columns: 1fr;
-  }
-
   .subject-actions button {
     opacity: 1;
   }

@@ -109,6 +109,55 @@
   opacity: 0.6;
 }
 
+/* ---------- Dashboard — subject accuracy (daily report) ---------- */
+
+.today-subjects {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.today-subjects-title {
+  margin: 0 0 8px;
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.today-subjects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.today-subject-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: var(--text-sm);
+}
+
+.today-subject-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.today-subject-name .filter-dot {
+  flex-shrink: 0;
+}
+
+.today-subject-acc {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
 /* ---------- Dashboard — 7-day rhythm strip ---------- */
 
 .today-week {
@@ -260,6 +309,54 @@
   font-size: var(--text-xl);
   font-weight: 750;
   letter-spacing: -0.015em;
+}
+
+/* Library counts (folders/exams) live with the library section —
+   not in the Today briefing meta. */
+.section-head-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  margin-inline-end: auto;
+
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.library-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+
+  color: var(--muted);
+}
+
+.library-meta-item svg {
+  color: var(--muted);
+}
+
+.library-meta-item strong {
+  color: var(--text);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.library-meta-item .meta-lb {
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .section-head {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+
+  .section-head-meta {
+    order: 3;
+    flex-basis: 100%;
+    margin-inline-end: 0;
+  }
 }
 
 .section-link {

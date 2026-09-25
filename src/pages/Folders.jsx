@@ -15,6 +15,8 @@ import { useToast } from "../context/ToastContext";
 import Icon from "../components/ui/Icon";
 import Modal from "../components/ui/Modal";
 import PageHeader from "../components/ui/PageHeader";
+import EmptyState from "../components/ui/EmptyState";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
 
 function Folders() {
   const { t } = useTranslation();
@@ -42,6 +44,7 @@ function Folders() {
   const [renamingFolder, setRenamingFolder] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [showRenameModal, setShowRenameModal] = useState(false);
+  const [deletingFolderId, setDeletingFolderId] = useState(null);
 
   function refreshFolders() {
     setFolders(getFolders());
@@ -80,13 +83,13 @@ function Folders() {
   }
 
   function handleDeleteFolder(id) {
-    const ok = window.confirm(
-      t("folders.delete.confirm")
-    );
+    setDeletingFolderId(id);
+  }
 
-    if (!ok) {
-      return;
-    }
+  function confirmDeleteFolder() {
+    const id = deletingFolderId;
+    setDeletingFolderId(null);
+    if (!id) return;
 
     const deleted =
       deleteFolder(id);
@@ -253,25 +256,25 @@ function Folders() {
       )}
 
       {visibleFolders.length === 0 ? (
-
-        <div className="empty-state">
-
-          <div className="empty-icon">
-            <Icon name="folder" size={26} />
+        folders.length === 0 ? (
+          <EmptyState
+            icon={<Icon name="folder" size={26} />}
+            title={t("folders.empty.title")}
+            description={t("folders.empty.description")}
+            action={{
+              label: t("folders.new"),
+              onClick: () => setShowModal(true),
+            }}
+          />
+        ) : (
+          <div className="empty-state">
+            <div className="empty-icon">
+              <Icon name="folder" size={26} />
+            </div>
+            <h3>{t("folders.empty.filtered")}</h3>
+            <p>{t("folders.empty.description")}</p>
           </div>
-
-          <h3>
-            {folders.length === 0
-              ? t("folders.empty.title")
-              : t("folders.empty.filtered")}
-          </h3>
-
-          <p>
-            {t("folders.empty.description")}
-          </p>
-
-        </div>
-
+        )
       ) : (
 
         <div className="folder-grid rise-list">
@@ -500,6 +503,16 @@ function Folders() {
           </button>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deletingFolderId)}
+        onClose={() => setDeletingFolderId(null)}
+        onConfirm={confirmDeleteFolder}
+        title={t("common.delete")}
+        message={t("folders.delete.confirm")}
+        confirmLabel={t("common.delete")}
+        cancelLabel={t("common.cancel")}
+      />
     </section>
   );
 }

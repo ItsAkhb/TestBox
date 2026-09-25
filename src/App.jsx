@@ -1,6 +1,7 @@
 import {
   Routes,
   Route,
+  Navigate,
 } from "react-router-dom";
 
 import Layout from "./components/Layout";
@@ -18,10 +19,9 @@ import Settings from "./pages/Settings";
 import Calendar from "./pages/Calendar";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
-import Account from "./pages/Account";
-import Friends from "./pages/Friends";
 
 import CloudSyncManager from "./components/CloudSyncManager";
+import OfflineModePrompt from "./components/ui/OfflineModePrompt";
 
 import { useAuth } from "./context/AuthContext";
 
@@ -41,6 +41,7 @@ function App() {
   return (
     <>
       <CloudSyncManager />
+      <OfflineModePrompt />
 
       <ErrorBoundary>
         <Routes>
@@ -55,8 +56,8 @@ function App() {
             <Route path="/marked" element={<Marked />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/calendar" element={<Calendar />} />
-            <Route path="/account" element={<Account />} />
-            <Route path="/friends" element={<Friends />} />
+            {/* Legacy deep links: Account was merged into Settings */}
+            <Route path="/account" element={<Navigate to="/settings" replace />} />
           </Route>
 
           <Route path="/login" element={<Login />} />

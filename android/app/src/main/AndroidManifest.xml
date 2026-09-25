@@ -22,6 +22,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Google Sign-In OAuth return (custom scheme). Must match
+                 Supabase Auth → Redirect URLs: testbox://auth/callback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="testbox"
+                    android:host="auth" />
+            </intent-filter>
+
         </activity>
 
         <provider

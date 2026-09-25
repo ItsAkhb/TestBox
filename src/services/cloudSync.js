@@ -19,7 +19,22 @@ import {
   getDeletedIds,
   getDirtyState,
   setDirtySuppression,
+  applyDeferredDirtyMarks,
+  beginCloudWrite,
+  endCloudWrite,
 } from "./dataService";
+
+// Cloud→local save* must not self-mark/enqueue (pull writes are not
+// local edits). Wraps only the synchronous save call so concurrent
+// user saves during network awaits still enqueue.
+function cloudSave(fn) {
+  beginCloudWrite();
+  try {
+    return fn();
+  } finally {
+    endCloudWrite();
+  }
+}
 
 /* =========================================================
    Schema capability detection
@@ -35,6 +50,8 @@ import {
 const schemaCapabilities = {
   probed: false,
   foldersSubjectId: false,
+  foldersRev: false,
+  examsRev: false,
   examsType: false,
   examsAnswerKey: false,
   examsExamState: false,
@@ -48,9 +65,22 @@ const schemaCapabilities = {
 };
 
 // Whether this page session has completed at least one cloud→local
-// pull. Guards the legacy wholesale-prune in syncLocalToCloud: before
-// any pull, "absent locally" must not be read as "deleted locally".
+// pull for the given user. Scoped by userId so an account/guest switch
+// never inherits a stale "already pulled" guard from the previous user.
 let sessionHasPulled = false;
+let sessionHasPulledUserId = null;
+
+function markSessionPulled(userId) {
+  sessionHasPulled = true;
+  sessionHasPulledUserId = userId || null;
+}
+
+function resetSessionPulledIfUserChanged(userId) {
+  if (sessionHasPulled && sessionHasPulledUserId !== (userId || null)) {
+    sessionHasPulled = false;
+    sessionHasPulledUserId = userId || null;
+  }
+}
 
 async function columnExists(table, column) {
   try {
@@ -76,13 +106,25 @@ async function tableExists(table) {
   }
 }
 
-export async function probeSchemaCapabilities() {
-  if (schemaCapabilities.probed) {
+// Schema capability probe result is cached for a short TTL so a page
+// that started offline (probes fail → "missing") recovers when the
+// network returns, without re-probing on every single sync cycle.
+const SCHEMA_PROBE_TTL_MS = 5 * 60 * 1000;
+let schemaProbedAt = 0;
+
+export async function probeSchemaCapabilities({ force = false } = {}) {
+  if (
+    schemaCapabilities.probed &&
+    !force &&
+    Date.now() - schemaProbedAt < SCHEMA_PROBE_TTL_MS
+  ) {
     return schemaCapabilities;
   }
 
   const [
     foldersSubjectId,
+    foldersRev,
+    examsRev,
     examsType,
     examsAnswerKey,
     examsExamState,
@@ -95,6 +137,8 @@ export async function probeSchemaCapabilities() {
     examQuestionsTagIds,
   ] = await Promise.all([
     columnExists("folders", "subject_id"),
+    columnExists("folders", "rev"),
+    columnExists("exams", "rev"),
     columnExists("exams", "type"),
     columnExists("exams", "answer_key"),
     columnExists("exams", "exam_state"),
@@ -108,6 +152,8 @@ export async function probeSchemaCapabilities() {
   ]);
 
   schemaCapabilities.foldersSubjectId = foldersSubjectId;
+  schemaCapabilities.foldersRev = foldersRev;
+  schemaCapabilities.examsRev = examsRev;
   schemaCapabilities.examsType = examsType;
   schemaCapabilities.examsAnswerKey = examsAnswerKey;
   schemaCapabilities.examsExamState = examsExamState;
@@ -119,6 +165,7 @@ export async function probeSchemaCapabilities() {
   schemaCapabilities.examsTagIds = examsTagIds;
   schemaCapabilities.examQuestionsTagIds = examQuestionsTagIds;
   schemaCapabilities.probed = true;
+  schemaProbedAt = Date.now();
 
   return schemaCapabilities;
 }
@@ -285,6 +332,9 @@ async function syncFolder(
     // Explicitly write NULL when unassigned — omitting the key would
     // leave the previous cloud value stale (unassign never propagated).
     row.subject_id = folder.subjectId ?? null;
+  }
+  if (schemaCapabilities.foldersRev) {
+    row.rev = (Number(folder.rev) || 0) + 1;
   }
 
   const { error } =
@@ -511,6 +561,9 @@ async function syncExam(
   if (schemaCapabilities.examsExamState && data.examState != null) {
     row.exam_state = data.examState;
   }
+  if (schemaCapabilities.examsRev) {
+    row.rev = (Number(exam.rev) || 0) + 1;
+  }
 
   const { error } =
     await supabase
@@ -625,6 +678,7 @@ export async function syncLocalToCloud(
 
   setStorageUser(userId);
 
+  resetSessionPulledIfUserChanged(userId);
   await probeSchemaCapabilities();
 
   const dirtyState = dirty || getDirtyState();
@@ -638,44 +692,47 @@ export async function syncLocalToCloud(
   // Local deletions first (tombstones) — never resurrected
   await applyLocalDeletesToCloud(userId, dirtyState.deletes);
 
-  // Legacy wholesale-prune: deletes cloud rows missing from the local
-  // list. UNSAFE before the first completed pull of the session — a
-  // fresh device (or one that never downloaded yet) would mistake the
-  // not-yet-downloaded cloud rows for "deleted locally" and wipe them.
-  // After a pull, an absent local row is genuinely deleted or was
-  // pruned by another device, so the prune is safe then. Until then,
-  // only tombstones (explicit deletes) propagate.
-  if (
-    sessionHasPulled &&
-    dirtyState.deletes.length === 0
-  ) {
-    if (dirtyState.exams) {
-      await deleteCloudExamsNotInLocal(userId, exams);
-    }
-    if (dirtyState.folders) {
-      await deleteCloudFoldersNotInLocal(userId, folders);
-    }
+  // NO wholesale prune: cloud rows missing locally are only removed
+  // via explicit tombstones. Counting "absent locally" as deleted
+  // wipes other clients' work whenever this device hasn't pulled yet
+  // (or when only one section was dirty).
+
+  // Dirty-only upload: a clean section must not overwrite another
+  // client's changes (pending-local-wins; equal content is a no-op).
+  if (dirtyState.folders) {
+    await Promise.all(
+      folders.map(
+        (folder) =>
+          syncFolder(
+            folder,
+            userId
+          )
+      )
+    );
   }
 
-  await Promise.all(
-    folders.map(
-      (folder) =>
-        syncFolder(
-          folder,
-          userId
-        )
-    )
-  );
-
-  await Promise.all(
-    exams.map(
-      (exam) =>
-        syncExam(
-          exam,
-          userId
-        )
-    )
-  );
+  // exam_state + question rows ride on the exam row (syncExam). A pure
+  // examState/answer edit only dirties examData — without this union,
+  // pushAndClearDirty would clear examData having uploaded nothing and
+  // the next pull would wipe the local in_progress attempt.
+  const examIdsToSync = new Set();
+  if (dirtyState.exams) {
+    for (const exam of exams) {
+      examIdsToSync.add(String(exam.id));
+    }
+  }
+  if (isObject(dirtyState.examData)) {
+    for (const examId of Object.keys(dirtyState.examData)) {
+      examIdsToSync.add(String(examId));
+    }
+  }
+  if (examIdsToSync.size > 0) {
+    await Promise.all(
+      exams
+        .filter((exam) => examIdsToSync.has(String(exam.id)))
+        .map((exam) => syncExam(exam, userId))
+    );
+  }
 
   // New-feature data: subjects, activity, settings, tags (capability-gated)
   await Promise.all([
@@ -693,10 +750,10 @@ export async function syncLocalToCloud(
 
   return {
     folders:
-      folders.length,
+      dirtyState.folders ? folders.length : 0,
 
     exams:
-      exams.length,
+      dirtyState.exams ? exams.length : 0,
   };
 }
 
@@ -767,16 +824,16 @@ async function applyLocalDeletesToCloud(userId, deletes) {
 async function getCloudFolders(
   userId
 ) {
+  const folderColumns = ["id", "name", "created_at"];
+  if (schemaCapabilities.foldersSubjectId) folderColumns.push("subject_id");
+  if (schemaCapabilities.foldersRev) folderColumns.push("rev");
+
   const {
     data,
     error,
   } = await supabase
     .from("folders")
-    .select(
-      schemaCapabilities.foldersSubjectId
-        ? "id, name, subject_id, created_at"
-        : "id, name, created_at"
-    )
+    .select(folderColumns.join(", "))
     .eq(
       "user_id",
       userId
@@ -872,116 +929,6 @@ async function getCloudTags(userId) {
   return data || [];
 }
 
-async function deleteCloudFoldersNotInLocal(
-  userId,
-  localFolders
-) {
-  const cloudFolders =
-    await getCloudFolders(userId);
-
-  const localIds =
-    new Set(
-      localFolders.map(
-        (folder) =>
-          String(folder.id)
-      )
-    );
-
-  const deletedIds =
-    cloudFolders
-      .filter(
-        (folder) =>
-          !localIds.has(
-            String(folder.id)
-          )
-      )
-      .map(
-        (folder) =>
-          folder.id
-      );
-
-
-  if (deletedIds.length === 0) {
-    return;
-  }
-
-
-  const {
-    error,
-  } =
-    await supabase
-      .from("folders")
-      .delete()
-      .eq(
-        "user_id",
-        userId
-      )
-      .in(
-        "id",
-        deletedIds
-      );
-
-
-  if (error) {
-    throw error;
-  }
-}
-
-async function deleteCloudExamsNotInLocal(
-  userId,
-  localExams
-) {
-  const cloudExams =
-    await getCloudExams(userId);
-
-  const localIds =
-    new Set(
-      localExams.map(
-        (exam) =>
-          String(exam.id)
-      )
-    );
-
-  const deletedIds =
-    cloudExams
-      .filter(
-        (exam) =>
-          !localIds.has(
-            String(exam.id)
-          )
-      )
-      .map(
-        (exam) =>
-          exam.id
-      );
-
-
-  if (deletedIds.length === 0) {
-    return;
-  }
-
-
-  const {
-    error,
-  } =
-    await supabase
-      .from("exams")
-      .delete()
-      .eq(
-        "user_id",
-        userId
-      )
-      .in(
-        "id",
-        deletedIds
-      );
-
-
-  if (error) {
-    throw error;
-  }
-}
-
 async function getCloudExams(
   userId
 ) {
@@ -1014,6 +961,9 @@ async function getCloudExams(
   }
   if (schemaCapabilities.examsExamState) {
     columns.push("exam_state");
+  }
+  if (schemaCapabilities.examsRev) {
+    columns.push("rev");
   }
 
   const {
@@ -1138,6 +1088,9 @@ function buildLocalExam(
   }
   if (schemaCapabilities.examsTagIds && Array.isArray(cloudExam.tag_ids)) {
     localExam.tagIds = cloudExam.tag_ids;
+  }
+  if (schemaCapabilities.examsRev && cloudExam.rev != null) {
+    localExam.rev = Number(cloudExam.rev);
   }
 
   return localExam;
@@ -1266,12 +1219,32 @@ export async function syncCloudToLocal(
 
   setStorageUser(userId);
 
+  resetSessionPulledIfUserChanged(userId);
   await probeSchemaCapabilities();
 
-  // Cloud→local writes must never look like local edits.
+  // Cloud→local writes must never look like local edits. The flag is
+  // process-global and spans awaits, so local mutations that land
+  // DURING a pull are captured via pre/post fingerprints (below) and
+  // re-marked dirty rather than silently overwritten.
   setDirtySuppression(true);
+  // Dirty marks that must stick even though suppression is on (local
+  // mutations that raced this pull). Applied after the flag lifts.
+  const deferredDirty = { folders: new Set(), exams: new Set(), examData: new Set() };
+  const deferredDeletes = [];
   try {
     const dirtyState = getDirtyState();
+
+    // Snapshot local state before any cloud fetch so concurrent local
+    // edits (during network awaits) can be detected and preserved.
+    const preFolders = new Map(
+      getFolders().map((f) => [String(f.id), JSON.stringify(f)])
+    );
+    const preExams = new Map(
+      getExams().map((e) => [String(e.id), JSON.stringify(e)])
+    );
+    const preExamData = new Map(
+      getExams().map((e) => [String(e.id), JSON.stringify(getExamData(e.id))])
+    );
 
     const [
       cloudFolders,
@@ -1296,12 +1269,14 @@ export async function syncCloudToLocal(
           (s) => !deletedSubjectIds.has(String(s.id))
         );
         if (liveSubjects.length > 0) {
-          saveSubjects(
-            liveSubjects.map((s) => ({
-              id: s.id,
-              name: s.name,
-              color: s.color ?? undefined,
-            }))
+          cloudSave(() =>
+            saveSubjects(
+              liveSubjects.map((s) => ({
+                id: s.id,
+                name: s.name,
+                color: s.color ?? undefined,
+              }))
+            )
           );
         }
       }
@@ -1310,32 +1285,54 @@ export async function syncCloudToLocal(
     // Dirty local entities are NEVER overwritten by a pull. Cloud rows
     // for dirty entities are skipped entirely; the local version wins
     // and is re-uploaded on the next push (upload-first model).
-    const localFolders = getFolders();
+    // Entities deleted or edited DURING this pull (fingerprint changed
+    // vs pre-fetch snapshot) are treated as dirty local wins too.
+    const localFoldersNow = getFolders();
+    const localExamsNow = getExams();
 
-    const localExamsList = getExams();
+    const concurrentFolderEdits = new Set();
+    localFoldersNow.forEach((f) => {
+      const before = preFolders.get(String(f.id));
+      if (before !== undefined && before !== JSON.stringify(f)) {
+        concurrentFolderEdits.add(String(f.id));
+      }
+    });
+    const concurrentExamEdits = new Set();
+    localExamsNow.forEach((e) => {
+      const before = preExams.get(String(e.id));
+      if (before !== undefined && before !== JSON.stringify(e)) {
+        concurrentExamEdits.add(String(e.id));
+      }
+    });
+    // Deletes that landed mid-pull: id existed before fetch, gone now.
+    const midPullDeletedFolders = new Set(
+      [...preFolders.keys()].filter(
+        (id) => !localFoldersNow.some((f) => String(f.id) === id)
+      )
+    );
+    const midPullDeletedExams = new Set(
+      [...preExams.keys()].filter(
+        (id) => !localExamsNow.some((e) => String(e.id) === id)
+      )
+    );
+
     const dirtyExamIds = new Set(
       Object.keys(dirtyState.examData || {}).map(String)
     );
+    const deletedExamIds = new Set(getDeletedIds("exam"));
 
     const downloadableExams = cloudExams.filter((exam) => {
       const examId = String(exam.id);
+      // Tombstoned exams are never re-adopted (metadata or questions).
+      if (deletedExamIds.has(examId)) return false;
+      if (midPullDeletedExams.has(examId)) return false;
       // Exam with dirty local data: keep local, re-upload later
       if (dirtyExamIds.has(examId)) return false;
       // Exam config dirty wholesale (includes local-only creates): skip pull
-      if (dirtyState.exams && localExamsList.some((e) => String(e.id) === examId)) return false;
+      if (dirtyState.exams && localExamsNow.some((e) => String(e.id) === examId)) return false;
+      if (concurrentExamEdits.has(examId)) return false;
       return true;
     });
-
-    const mergedFolders = mergeFolders(
-      localFolders,
-      cloudFolders,
-      dirtyState
-    );
-
-    const mergedExams = mergeExams(
-      localExamsList,
-      downloadableExams
-    );
 
     const examDataEntries =
       await Promise.all(
@@ -1358,9 +1355,78 @@ export async function syncCloudToLocal(
         )
       );
 
+    // Re-read AFTER question downloads: local edits/deletes may have
+    // landed while questions were in flight.
+    const localFoldersAfterQuestions = getFolders();
+    const localExamsAfterQuestions = getExams();
+
+    localFoldersAfterQuestions.forEach((f) => {
+      const before = preFolders.get(String(f.id));
+      if (before !== undefined && before !== JSON.stringify(f)) {
+        concurrentFolderEdits.add(String(f.id));
+        deferredDirty.folders.add(String(f.id));
+      }
+    });
+    localExamsAfterQuestions.forEach((e) => {
+      const before = preExams.get(String(e.id));
+      if (before !== undefined && before !== JSON.stringify(e)) {
+        concurrentExamEdits.add(String(e.id));
+        deferredDirty.exams.add(String(e.id));
+      }
+    });
+    // Deletes during question download: existed in pre-snapshot, gone now.
+    [...preFolders.keys()].forEach((id) => {
+      if (!localFoldersAfterQuestions.some((f) => String(f.id) === id)) {
+        midPullDeletedFolders.add(id);
+        deferredDeletes.push({ type: "folder", id });
+      }
+    });
+    [...preExams.keys()].forEach((id) => {
+      if (!localExamsAfterQuestions.some((e) => String(e.id) === id)) {
+        midPullDeletedExams.add(id);
+        deferredDeletes.push({ type: "exam", id });
+      }
+    });
+
+    // Rebuild merged lists against the post-download local state so a
+    // mid-download delete is not resurrected by saveExams/saveFolders.
+    const mergedFoldersFinal = mergeFolders(
+      localFoldersAfterQuestions,
+      cloudFolders,
+      dirtyState,
+      {
+        concurrentFolderEdits,
+        midPullDeletedFolders,
+        deferredDirty,
+        // Absence means "deleted remotely" only when this account's cloud
+        // list is non-empty (a complete fetch that still omits the row).
+        // An empty list is ambiguous — never-synced local rows would be
+        // wiped — so never treat empty as mass remote deletion.
+        allowRemoteDelete: cloudFolders.length > 0,
+        preFetchIds: new Set(preFolders.keys()),
+      }
+    );
+    const downloadableFinal = downloadableExams.filter(
+      (exam) => !midPullDeletedExams.has(String(exam.id))
+    );
+    const mergedExamsFinal = mergeExams(
+      localExamsAfterQuestions,
+      downloadableFinal,
+      {
+        midPullDeletedExams,
+        concurrentExamEdits,
+        deferredDirty,
+        dirtyState,
+        allowRemoteDelete: cloudExams.length > 0,
+        preFetchIds: new Set(preExams.keys()),
+      }
+    );
+
     if (
-      !saveFolders(
-        mergedFolders
+      !cloudSave(() =>
+        saveFolders(
+          mergedFoldersFinal
+        )
       )
     ) {
       throw new Error(
@@ -1369,8 +1435,10 @@ export async function syncCloudToLocal(
     }
 
     if (
-      !saveExams(
-        mergedExams
+      !cloudSave(() =>
+        saveExams(
+          mergedExamsFinal
+        )
       )
     ) {
       throw new Error(
@@ -1384,6 +1452,9 @@ export async function syncCloudToLocal(
         examData,
       ] of examDataEntries
     ) {
+      const idStr = String(examId);
+      if (midPullDeletedExams.has(idStr)) continue;
+
       // Preserve local-only exam fields the cloud schema doesn't carry
       // yet (answer key, exam lifecycle) so a cloud round-trip on the
       // pre-migration schema can't destroy them.
@@ -1394,11 +1465,35 @@ export async function syncCloudToLocal(
       if (!schemaCapabilities.examsExamState && existing?.examState != null) {
         examData.examState = existing.examState;
       }
+      // Cloud may have no exam_state (older row, mid-migration, or a
+      // push that never landed). Never let that null out a local
+      // in_progress attempt — one source of truth stays examState.
+      // A cloud "completed" still wins (finishing is terminal).
+      if (
+        existing?.examState?.status === "in_progress" &&
+        examData.examState?.status !== "in_progress" &&
+        examData.examState?.status !== "completed"
+      ) {
+        examData.examState = existing.examState;
+      }
+
+      // Local examData edit landed while questions were downloading:
+      // keep the local payload and re-mark dirty after suppression lifts.
+      const preData = preExamData.get(idStr);
+      const postData = JSON.stringify(getExamData(examId));
+      const examDataEditedMidPull = preData !== undefined && preData !== postData;
+
+      if (examDataEditedMidPull || dirtyExamIds.has(idStr)) {
+        deferredDirty.examData.add(idStr);
+        continue;
+      }
 
       if (
-        !saveExamData(
-          examId,
-          examData
+        !cloudSave(() =>
+          saveExamData(
+            examId,
+            examData
+          )
         )
       ) {
         throw new Error(
@@ -1419,13 +1514,13 @@ export async function syncCloudToLocal(
         const localData = getActivity(day.date);
         const dayIsDirty = Boolean(dirtyState.activity?.[String(day.date)]);
         if (!localData) {
-          saveActivity(day.date, day.payload);
+          cloudSave(() => saveActivity(day.date, day.payload));
         } else if (dayIsDirty) {
           // Dirty local day wins; it re-uploads on the next push.
         } else {
           const merged = mergeActivityDay(localData, day.payload);
           if (merged) {
-            saveActivity(day.date, merged);
+            cloudSave(() => saveActivity(day.date, merged));
           }
         }
       }
@@ -1444,7 +1539,7 @@ export async function syncCloudToLocal(
           (localSettings.language === "fa" &&
             !localSettings.weatherLocation);
         if (isDefault) {
-          saveSettings(cloudSettings.settings);
+          cloudSave(() => saveSettings(cloudSettings.settings));
         }
       }
     }
@@ -1474,24 +1569,36 @@ export async function syncCloudToLocal(
           merged.push({ id: tag.id, name: tag.name, color: tag.color ?? undefined });
         }
       });
-      saveTags(merged);
+      cloudSave(() => saveTags(merged));
     }
 
-    return {
+    const result = {
       folders:
-        mergedFolders.length,
+        mergedFoldersFinal.length,
 
       exams:
-        mergedExams.length,
+        mergedExamsFinal.length,
 
       examData:
         examDataEntries.length,
     };
+    // Completed successfully — only now may later logic trust "we've pulled".
+    markSessionPulled(userId);
+    return result;
   } finally {
     setDirtySuppression(false);
-    // The prune guard needs "at least one completed pull" — set it
-    // only after this function returns successfully.
-    sessionHasPulled = true;
+    // Re-apply dirty marks/tombstones for local mutations that raced
+    // the pull (suppression blocked markDirty while they ran).
+    try {
+      applyDeferredDirtyMarks({
+        folderIds: [...deferredDirty.folders],
+        examIds: [...deferredDirty.exams],
+        examDataIds: [...deferredDirty.examData],
+        deletes: deferredDeletes,
+      });
+    } catch {
+      // best-effort; next user edit re-arms sync
+    }
   }
 }
 
@@ -1596,28 +1703,71 @@ function mergeActivityDay(local, cloud) {
   };
 }
 
-function mergeFolders(localFolders, incomingCloudFolders, dirtyState) {
+function mergeFolders(localFolders, incomingCloudFolders, dirtyState, race = {}) {
+  const {
+    concurrentFolderEdits = new Set(),
+    midPullDeletedFolders = new Set(),
+    deferredDirty = null,
+    allowRemoteDelete = false,
+    preFetchIds = null,
+  } = race;
   // Tombstoned folders must never be re-adopted from the cloud — a
   // stale device re-uploading them, or a pull racing the delete push,
   // must not resurrect the deletion.
   const deletedIds = new Set(getDeletedIds("folder"));
   const cloudFolders = incomingCloudFolders.filter(
-    (folder) => !deletedIds.has(String(folder.id))
+    (folder) =>
+      !deletedIds.has(String(folder.id)) &&
+      !midPullDeletedFolders.has(String(folder.id))
   );
 
   const cloudById = new Map(
     cloudFolders.map((folder) => [String(folder.id), folder])
   );
 
-  const merged = localFolders.map((folder) => {
-    const cloudFolder = cloudById.get(String(folder.id));
-    if (!cloudFolder) return folder;
+  const merged = [];
+  localFolders.forEach((folder) => {
+    const id = String(folder.id);
+    const cloudFolder = cloudById.get(id);
+
+    if (!cloudFolder) {
+      // Remote deletion adoption: only when the section is clean, the
+      // cloud list is trusted, this row existed before the pull (a
+      // mid-pull create is local work), and it is not dirty/tombstoned/
+      // concurrently edited. Dirty local-only rows stay until pushed.
+      const existedBeforePull = preFetchIds == null || preFetchIds.has(id);
+      const canAdoptRemoteDelete =
+        allowRemoteDelete &&
+        existedBeforePull &&
+        !dirtyState.folders &&
+        !concurrentFolderEdits.has(id) &&
+        !midPullDeletedFolders.has(id) &&
+        !deletedIds.has(id);
+      if (canAdoptRemoteDelete) return;
+      merged.push(folder);
+      return;
+    }
 
     // Local values win for a dirty collection (re-uploaded on push).
-    // A clean folder adopts cloud values (name/subjectId/createdAt).
-    if (dirtyState.folders) return folder;
+    // Concurrent local edits during this pull also win.
+    if (dirtyState.folders || concurrentFolderEdits.has(id)) {
+      merged.push(folder);
+      return;
+    }
 
-    return {
+    // Rev conflict merge: higher rev wins. Ties fall through to adopt
+    // cloud (equal content is a no-op; equal rev means same generation).
+    if (schemaCapabilities.foldersRev) {
+      const localRev = Number(folder.rev) || 0;
+      const cloudRev = Number(cloudFolder.rev) || 0;
+      if (localRev > cloudRev) {
+        deferredDirty?.folders?.add(id);
+        merged.push(folder);
+        return;
+      }
+    }
+
+    merged.push({
       ...folder,
       name: cloudFolder.name ?? folder.name,
       subjectId:
@@ -1626,7 +1776,10 @@ function mergeFolders(localFolders, incomingCloudFolders, dirtyState) {
           ? cloudFolder.subject_id
           : folder.subjectId ?? null,
       createdAt: cloudFolder.created_at ?? folder.createdAt,
-    };
+      ...(schemaCapabilities.foldersRev && cloudFolder.rev != null
+        ? { rev: Number(cloudFolder.rev) }
+        : {}),
+    });
   });
 
   // Cloud-only folders are additions — always accepted.
@@ -1642,6 +1795,9 @@ function mergeFolders(localFolders, incomingCloudFolders, dirtyState) {
             ? folder.subject_id
             : null,
         createdAt: folder.created_at,
+        ...(schemaCapabilities.foldersRev && folder.rev != null
+          ? { rev: Number(folder.rev) }
+          : {}),
       });
     }
   });
@@ -1653,21 +1809,67 @@ function mergeFolders(localFolders, incomingCloudFolders, dirtyState) {
  * Merge cloud exam configs into the local list. Local exams are never
  * dropped (deletes are tombstoned); clean exams adopt cloud config;
  * cloud-only exams are added.
+ *
+ * Conflict merge: when `rev` exists the higher rev wins; concurrent
+ * local edits during this pull also keep local values.
  */
-function mergeExams(localExams, incomingCloudExams) {
+function mergeExams(localExams, incomingCloudExams, race = {}) {
+  const {
+    midPullDeletedExams = new Set(),
+    concurrentExamEdits = new Set(),
+    deferredDirty = null,
+    dirtyState = {},
+    allowRemoteDelete = false,
+    preFetchIds = null,
+  } = race;
   const deletedIds = new Set(getDeletedIds("exam"));
   const downloadableCloudExams = incomingCloudExams.filter(
-    (exam) => !deletedIds.has(String(exam.id))
+    (exam) =>
+      !deletedIds.has(String(exam.id)) &&
+      !midPullDeletedExams.has(String(exam.id))
   );
 
   const cloudById = new Map(
     downloadableCloudExams.map((exam) => [String(exam.id), exam])
   );
 
-  const merged = localExams.map((exam) => {
-    const cloudExam = cloudById.get(String(exam.id));
-    if (!cloudExam) return exam;
-    return { ...exam, ...buildLocalExam(cloudExam), id: exam.id };
+  const merged = [];
+  localExams.forEach((exam) => {
+    const id = String(exam.id);
+    const cloudExam = cloudById.get(id);
+
+    if (!cloudExam) {
+      // Remote deletion adoption (same rules as folders).
+      const existedBeforePull = preFetchIds == null || preFetchIds.has(id);
+      const canAdoptRemoteDelete =
+        allowRemoteDelete &&
+        existedBeforePull &&
+        !dirtyState.exams &&
+        !dirtyState.examData?.[id] &&
+        !concurrentExamEdits.has(id) &&
+        !midPullDeletedExams.has(id) &&
+        !deletedIds.has(id);
+      if (canAdoptRemoteDelete) return;
+      merged.push(exam);
+      return;
+    }
+
+    if (concurrentExamEdits.has(id)) {
+      merged.push(exam);
+      return;
+    }
+
+    if (schemaCapabilities.examsRev) {
+      const localRev = Number(exam.rev) || 0;
+      const cloudRev = Number(cloudExam.rev) || 0;
+      if (localRev > cloudRev) {
+        deferredDirty?.exams?.add(id);
+        merged.push(exam);
+        return;
+      }
+    }
+
+    merged.push({ ...exam, ...buildLocalExam(cloudExam), id: exam.id });
   });
 
   const localIds = new Set(localExams.map((e) => String(e.id)));

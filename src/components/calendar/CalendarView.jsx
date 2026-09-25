@@ -107,17 +107,34 @@ export default function CalendarView({ gridData, monthLabel, todayStr, selectedD
             <button
               key={index}
               type="button"
-              className={`calendar-day ${!dayInfo.currentMonth ? "other-month" : ""} ${isToday(dayInfo) ? "today" : ""} ${isSelected(dayInfo) ? "selected" : ""} ${hasActivity ? "has-activity" : ""} ${intensity > 1 ? `intensity-${intensity}` : ""}`}
+              className={`calendar-day ${!dayInfo.currentMonth ? "other-month" : ""} ${isToday(dayInfo) ? "today" : ""} ${isSelected(dayInfo) ? "selected" : ""} ${hasActivity ? "has-activity" : "no-activity"}`}
               onClick={() => onSelectDate(ds)}
-              title={hasActivity ? `${entry.solved} ${t("calendar.totalSolved")}` : undefined}
+              title={hasActivity ? `${entry.solved} ${t("calendar.totalSolved")}` : t("calendar.noActivity")}
               aria-pressed={isSelected(dayInfo)}
             >
               <span className="calendar-day-number">{dayNumber(dayInfo)}</span>
-              {hasActivity && <span className="calendar-day-dot" aria-hidden="true" />}
+              {hasActivity ? (
+                <span
+                  className={`calendar-day-dot intensity-dot intensity-${intensity}`}
+                  aria-hidden="true"
+                />
+              ) : (
+                <span className="calendar-day-dot is-empty" aria-hidden="true" />
+              )}
             </button>
           );
         })}
       </motion.div>
+
+      <div className="calendar-intensity-legend" aria-label={t("calendar.intensity.legend")}>
+        <span className="calendar-intensity-label">{t("calendar.intensity.legend")}</span>
+        <span className="calendar-intensity-dot is-empty" aria-hidden="true" />
+        <span className="calendar-intensity-caption">{t("calendar.intensity.low")}</span>
+        <span className="calendar-intensity-dot intensity-2" aria-hidden="true" />
+        <span className="calendar-intensity-dot intensity-3" aria-hidden="true" />
+        <span className="calendar-intensity-dot intensity-4" aria-hidden="true" />
+        <span className="calendar-intensity-caption">{t("calendar.intensity.high")}</span>
+      </div>
     </div>
   );
 }

@@ -1,13 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import translations from "./translations";
+import { getSettings, saveSettings } from "../services/dataService";
 
 const I18nContext = createContext(null);
 
 export function I18nProvider({ children }) {
   const [language, setLanguageState] = useState(() => {
     try {
-      const settings = JSON.parse(localStorage.getItem("testbox-settings") || "null");
-      return settings?.language || "fa";
+      return getSettings()?.language || "fa";
     } catch {
       return "fa";
     }
@@ -20,9 +20,8 @@ export function I18nProvider({ children }) {
     document.documentElement.lang = lang;
 
     try {
-      const settings = JSON.parse(localStorage.getItem("testbox-settings") || "{}");
-      settings.language = lang;
-      localStorage.setItem("testbox-settings", JSON.stringify(settings));
+      const settings = getSettings() || {};
+      saveSettings({ ...settings, language: lang });
     } catch {
       // storage unavailable — language stays in-memory
     }

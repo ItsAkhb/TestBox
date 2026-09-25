@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { useTranslation } from "../../i18n";
 import Icon from "../ui/Icon";
 
@@ -10,13 +11,17 @@ function splitHMS(remaining) {
   };
 }
 
-export default function ExamTimer({ formatted, isWarning, isCritical, isPulsing, remaining, mode = "countdown" }) {
+const ExamTimer = forwardRef(function ExamTimer(
+  { formatted, isWarning, isCritical, isPulsing, remaining, mode = "countdown" },
+  ref
+) {
   const { t } = useTranslation();
 
   // Stopwatch mode shares the exact pill; a session timer is never urgent.
   if (mode === "stopwatch") {
     return (
       <div
+        ref={ref}
         className="focus-timer is-normal"
         role="timer"
         aria-live="off"
@@ -44,6 +49,7 @@ export default function ExamTimer({ formatted, isWarning, isCritical, isPulsing,
 
   return (
     <div
+      ref={ref}
       className={`focus-timer is-${state} ${isPulsing ? "is-pulsing" : ""}`}
       role="timer"
       aria-live={state === "normal" ? "off" : "polite"}
@@ -58,4 +64,6 @@ export default function ExamTimer({ formatted, isWarning, isCritical, isPulsing,
       </span>
     </div>
   );
-}
+});
+
+export default ExamTimer;

@@ -70,11 +70,6 @@
   marked data preserved). Tags page is now a tagged-question browser
   (filter chips, per-question assign modal, deep-links `?question=N`).
   Synced via `exam_questions.tag_ids` (new column).
-- **Friends system:** unique usernames + display names (auto-created
-  profile from email), search by username, send/accept/reject/cancel
-  requests, friend list, presence (5-min heartbeat window). Server-side
-  via `profiles`/`friend_requests`/`friendships` tables with RLS.
-  Cloud-only by design (account data; nothing to store locally).
 - **Statistics fixes:** practice percentage now counts only questions
   with an actual result (untouched no longer drag it down); removing an
   answer/marking/unresolved fully reverts the question's recorded

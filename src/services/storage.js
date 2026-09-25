@@ -1,15 +1,179 @@
 const STORAGE_PREFIX = "testbox-";
 
+// Fixed key (not user-prefixed): the queue must survive setStorageUser
+// changes and a reload mid-pull. Ops apply to the active user's dirty
+// registry when flushed.
+const SUPPRESSED_OPS_KEY = `${STORAGE_PREFIX}suppressed-ops`;
+
 let currentUserId = null;
 
 // Suppresses dirty-marking while cloud code writes local storage
 // (uploads stay uploads; cloud→local pulls must not look like edits).
 let suppressDirty = false;
 
-export function setDirtySuppression(active) {
-  suppressDirty = Boolean(active);
+// Dirty marks recorded while suppression is on (user edits racing a
+// cloud pull). Persisted to localStorage so a refresh/process death
+// mid-pull cannot drop them; flushed into the durable registry when
+// suppression lifts (or on first read after a restart with suppression off).
+let suppressedOps = null;
+
+// Depth of cloud→local save* calls only (not the whole pull). While > 0,
+// save* must not enqueue/mark — pull writes are not local edits. User
+// saves during the same pull have depth 0 and enqueue durably.
+let cloudWriteDepth = 0;
+
+export function beginCloudWrite() {
+  cloudWriteDepth += 1;
 }
 
+export function endCloudWrite() {
+  cloudWriteDepth = Math.max(0, cloudWriteDepth - 1);
+}
+
+function isValidSuppressedOp(op) {
+  if (!op || typeof op !== "object") return false;
+  if (op.kind === "delete") {
+    return typeof op.type === "string" && op.id != null && op.id !== "";
+  }
+  if (op.kind === "mark") {
+    return typeof op.section === "string" && op.section !== "";
+  }
+  return false;
+}
+
+// Ops with no userId are legacy (pre-stamp) and belong to whoever is
+// active now. Stamped ops only apply to their originating account;
+// foreign ops are retained until that user returns.
+function isCurrentSuppressedOp(op) {
+  if (op.userId == null) return true;
+  if (currentUserId == null) return false;
+  return String(op.userId) === String(currentUserId);
+}
+
+function loadSuppressedOps() {
+  if (Array.isArray(suppressedOps)) return suppressedOps;
+  let raw;
+  try {
+    const saved = storageAdapter.getItem(SUPPRESSED_OPS_KEY);
+    if (saved == null || saved === "") {
+      suppressedOps = [];
+      return suppressedOps;
+    }
+    raw = JSON.parse(saved);
+  } catch {
+    suppressedOps = [];
+    removeKey(SUPPRESSED_OPS_KEY);
+    return suppressedOps;
+  }
+  if (!Array.isArray(raw)) {
+    suppressedOps = [];
+    removeKey(SUPPRESSED_OPS_KEY);
+    return suppressedOps;
+  }
+  suppressedOps = raw.filter(isValidSuppressedOp);
+  if (suppressedOps.length !== raw.length) {
+    persistSuppressedOps();
+  }
+  return suppressedOps;
+}
+
+function persistSuppressedOps() {
+  if (!Array.isArray(suppressedOps) || suppressedOps.length === 0) {
+    removeKey(SUPPRESSED_OPS_KEY);
+    return true;
+  }
+  return writeJson(SUPPRESSED_OPS_KEY, suppressedOps);
+}
+
+function enqueueSuppressedOp(op) {
+  loadSuppressedOps();
+  suppressedOps.push({ ...op, userId: currentUserId ?? null });
+  persistSuppressedOps();
+}
+
+/**
+ * After a reload, suppressDirty defaults to false while a queue may
+ * still be on disk. Flush before reading pending/dirty state so the
+ * next push/scheduler sees mid-pull work without waiting for another pull.
+ */
+function ensureSuppressedFlushed() {
+  loadSuppressedOps();
+  if (!suppressDirty && suppressedOps.length > 0) {
+    flushSuppressedDirty();
+  }
+}
+
+export function setDirtySuppression(active) {
+  const was = suppressDirty;
+  suppressDirty = Boolean(active);
+  if (was && !suppressDirty) {
+    flushSuppressedDirty();
+  }
+}
+
+/** Dirty/delete ops still queued for the current user (suppression on or reload). */
+export function getSuppressedOpCount() {
+  return loadSuppressedOps().filter(isCurrentSuppressedOp).length;
+}
+
+function flushSuppressedDirty() {
+  loadSuppressedOps();
+  // Dequeue one-by-one: apply succeeds → drop from memory+disk before the
+  // next op, so a crash mid-flush neither loses un-applied ops nor re-applies
+  // completed ones (re-applying a delete would bump generation incorrectly).
+  // Foreign-account ops are skipped and retained until that user returns.
+  let i = 0;
+  while (i < suppressedOps.length) {
+    const op = suppressedOps[i];
+    if (!isCurrentSuppressedOp(op)) {
+      i += 1;
+      continue;
+    }
+    let ok;
+    try {
+      ok = op.kind === "delete"
+        ? applyDeleteOp(op.type, op.id, op.deletedAt)
+        : applyMarkOp(op.section, op.id);
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      persistSuppressedOps();
+      return;
+    }
+    suppressedOps.splice(i, 1);
+    persistSuppressedOps();
+  }
+}
+
+
+// =========================================================
+// Atomic multi-key mutations
+// When IndexedDB is available, multi-store writes (entity + dirty +
+// tombstone) run in ONE transaction so a crash can never leave a
+// half-applied mutation. Falls back to sequential localStorage writes
+// when IDB is unavailable (tests, SSR, very old browsers).
+// =========================================================
+
+/**
+ * Run `fn` as an atomic mutation when IDB is available; otherwise run
+ * it directly (localStorage path is inherently non-atomic, but every
+ * helper validates before writing).
+ */
+export async function atomicMutation(operations) {
+  try {
+    const { idbAtomicMutate } = await import("./idb.js");
+    if (typeof indexedDB !== "undefined") {
+      await idbAtomicMutate(operations);
+      return true;
+    }
+  } catch {
+    // IDB unavailable — fall through to sync path
+  }
+  // Caller already applied side effects via its own helpers; this is a
+  // coordination point for future IDB-backed entity stores.
+  return true;
+}
 
 // =========================================================
 // Storage Adapter
@@ -145,25 +309,54 @@ function writeDirty(dirty) {
 // row and resurrect it.
 const TOMBSTONE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-function markDirty(section, id = null) {
-  if (suppressDirty) return;
+function applyMarkOp(section, id = null) {
   const dirty = readDirty();
-  if (section === "deletes") {
-    if (!Array.isArray(dirty.deletes)) dirty.deletes = [];
-    const signature = `${id.type}:${id.id}`;
-    const existing = dirty.deletes.find((d) => `${d.type}:${d.id}` === signature);
-    if (existing) {
-      if (id.deletedAt) existing.deletedAt = id.deletedAt;
-    } else {
-      dirty.deletes.push({ type: id.type, id: String(id.id), deletedAt: id.deletedAt || Date.now() });
-    }
-  } else if (id == null) {
+  if (id == null) {
     dirty[section] = true;
   } else {
     if (!isObject(dirty[section])) dirty[section] = {};
     dirty[section][String(id)] = true;
   }
-  writeDirty(dirty);
+  return writeDirty(dirty);
+}
+
+function applyDeleteOp(type, id, deletedAt) {
+  const dirty = readDirty();
+  if (!Array.isArray(dirty.deletes)) dirty.deletes = [];
+  const signature = `${type}:${id}`;
+  const existing = dirty.deletes.find((d) => `${d.type}:${d.id}` === signature);
+  if (existing) {
+    if (deletedAt) existing.deletedAt = deletedAt;
+    // Re-delete after a recreate is NEW pending work: bump generation
+    // so an older push snapshot (same id, older generation) cannot ack it.
+    existing.generation = (Number(existing.generation) || 0) + 1;
+    delete existing.pushedAt;
+  } else {
+    dirty.deletes.push({
+      type,
+      id: String(id),
+      deletedAt: deletedAt || Date.now(),
+      generation: 0,
+    });
+  }
+  return writeDirty(dirty);
+}
+
+/**
+ * Record pending sync work. Returns true when the mark is durable
+ * (written or safely queued during pull suppression). A false return
+ * means the caller MUST NOT report the mutation as successfully
+ * persisted for sync — the entity write alone is not enough.
+ */
+function markDirty(section, id = null) {
+  if (suppressDirty) {
+    enqueueSuppressedOp({ kind: "mark", section, id });
+    return true;
+  }
+  if (section === "deletes") {
+    return applyDeleteOp(id.type, id.id, id.deletedAt);
+  }
+  return applyMarkOp(section, id);
 }
 
 function clearDirty(section, ids = null) {
@@ -184,14 +377,16 @@ function clearDirty(section, ids = null) {
   writeDirty(dirty);
 }
 
-// Drop tombstones older than the TTL (their deletion is now safely
-// propagated; a re-creating device creating the SAME id is a genuine
-// new entity). Called on every dirty read.
+// Drop ACKED tombstones older than the TTL measured from acknowledgement
+// (not from deletion). An unacked delete never expires — a device offline
+// for weeks must still push it and keep filtering pulls. After ack, the
+// tombstone only needs to outlive other devices' pull windows.
 function pruneExpiredTombstones(dirty) {
   if (!Array.isArray(dirty.deletes)) return dirty;
   const cutoff = Date.now() - TOMBSTONE_TTL_MS;
   const kept = dirty.deletes.filter((d) => {
-    const at = Number(d.deletedAt) || 0;
+    if (!d.pushedAt) return true;
+    const at = Number(d.pushedAt) || 0;
     return at === 0 || at > cutoff;
   });
   if (kept.length !== dirty.deletes.length) {
@@ -202,6 +397,11 @@ function pruneExpiredTombstones(dirty) {
 }
 
 function hasDirtyChanges() {
+  ensureSuppressedFlushed();
+  // Ops queued during pull suppression are pending work too — the
+  // scheduler and UI must see them before the flush runs. Only the
+  // current account's ops count as pending for this user.
+  if (loadSuppressedOps().some(isCurrentSuppressedOp)) return true;
   const d = readDirty();
   pruneExpiredTombstones(d);
   return hasDirtyChangesInner(d);
@@ -226,27 +426,74 @@ function hasDirtyChangesInner(d) {
   );
 }
 
-/** Mark all current tombstones as pushed (cloud delete acked). */
-export function markTombstonesPushed() {
+/**
+ * Acknowledge the exact tombstones present in `snapshot` (the deletes
+ * list captured before a push started). Only entries whose type+id+
+ * deletedAt still match the live tombstone are acked — a delete that
+ * landed mid-push, or a re-delete of the same id, stays pending so the
+ * next cycle retries it. Empty/omitted snapshots ack nothing.
+ */
+export function markTombstonesPushed(snapshot) {
+  if (!Array.isArray(snapshot) || snapshot.length === 0) return;
   const dirty = readDirty();
   pruneExpiredTombstones(dirty);
+  const now = Date.now();
   let changed = false;
-  (dirty.deletes || []).forEach((t) => {
-    if (!t.pushedAt) {
-      t.pushedAt = Date.now();
+  for (const snap of snapshot) {
+    if (!snap || snap.type == null || snap.id == null) continue;
+    const sig = `${snap.type}:${snap.id}`;
+    const current = (dirty.deletes || []).find(
+      (d) => `${d.type}:${d.id}` === sig
+    );
+    if (!current) continue;
+    if (String(current.deletedAt) !== String(snap.deletedAt)) continue;
+    if ((Number(current.generation) || 0) !== (Number(snap.generation) || 0)) continue;
+    if (!current.pushedAt) {
+      current.pushedAt = now;
       changed = true;
     }
-  });
+  }
   if (changed) writeDirty(dirty);
 }
 
+/**
+ * Record deletion intent (tombstone + owning collection dirty) durably.
+ * Returns true when the intent is durable (written, or queued during
+ * pull suppression). Composite deletes MUST call this and check the
+ * result BEFORE any multi-key destructive entity removal.
+ *
+ * Non-suppressed path writes tombstone + owner mark in ONE dirty-registry
+ * write so the intent cannot half-land across two setItem calls.
+ */
 function recordLocalDelete(type, id) {
-  if (suppressDirty) return;
-  markDirty("deletes", { type, id: String(id), deletedAt: Date.now() });
-  // A local delete also dirties the owning collection so the cloud
-  // row for any resurrected/renamed entity is refreshed on next upload.
+  const deletedAt = Date.now();
   const owners = { folder: "folders", exam: "exams", tag: "tags", subject: "subjects" };
-  markDirty(owners[type] || "folders", null);
+  const ownerSection = owners[type] || "folders";
+  if (suppressDirty) {
+    enqueueSuppressedOp({ kind: "delete", type, id: String(id), deletedAt });
+    enqueueSuppressedOp({ kind: "mark", section: ownerSection, id: null });
+    return true;
+  }
+  const dirty = readDirty();
+  if (!Array.isArray(dirty.deletes)) dirty.deletes = [];
+  const signature = `${type}:${id}`;
+  const existing = dirty.deletes.find((d) => `${d.type}:${d.id}` === signature);
+  if (existing) {
+    existing.deletedAt = deletedAt;
+    // Re-delete after a recreate is NEW pending work: bump generation
+    // so an older push snapshot (same id, older generation) cannot ack it.
+    existing.generation = (Number(existing.generation) || 0) + 1;
+    delete existing.pushedAt;
+  } else {
+    dirty.deletes.push({
+      type,
+      id: String(id),
+      deletedAt,
+      generation: 0,
+    });
+  }
+  dirty[ownerSection] = true;
+  return writeDirty(dirty);
 }
 
 /** Tombstoned ids per type — pull filters use this to avoid resurrection. */
@@ -259,6 +506,7 @@ export function getDeletedIds(type) {
 }
 
 export function getDirtyState() {
+  ensureSuppressedFlushed();
   return readDirty();
 }
 
@@ -268,6 +516,50 @@ export function hasPendingLocalChanges() {
 
 export function clearDirtySection(section, ids = null) {
   clearDirty(section, ids);
+}
+
+/**
+ * Re-apply dirty marks and tombstones for local mutations that raced a
+ * cloud pull (suppression was on while they ran). Called by the sync
+ * engine only after setDirtySuppression(false).
+ */
+export function applyDeferredDirtyMarks({ folderIds = [], examIds = [], examDataIds = [], deletes = [] } = {}) {
+  if (suppressDirty) return;
+  const dirty = readDirty();
+  let changed = false;
+  folderIds.forEach(() => {
+    if (!dirty.folders) {
+      dirty.folders = true;
+      changed = true;
+    }
+  });
+  examIds.forEach(() => {
+    if (!dirty.exams) {
+      dirty.exams = true;
+      changed = true;
+    }
+  });
+  examDataIds.forEach((id) => {
+    if (!isObject(dirty.examData)) dirty.examData = {};
+    const key = String(id);
+    if (!dirty.examData[key]) {
+      dirty.examData[key] = true;
+      changed = true;
+    }
+  });
+  if (Array.isArray(deletes) && deletes.length > 0) {
+    if (!Array.isArray(dirty.deletes)) dirty.deletes = [];
+    for (const del of deletes) {
+      if (!del || del.type == null || del.id == null) continue;
+      const sig = `${del.type}:${del.id}`;
+      const exists = dirty.deletes.some((t) => `${t.type}:${t.id}` === sig);
+      if (!exists) {
+        dirty.deletes.push({ type: del.type, id: String(del.id), deletedAt: Date.now() });
+        changed = true;
+      }
+    }
+  }
+  if (changed) writeDirty(dirty);
 }
 
 const DEFAULT_EXAM_DATA = {
@@ -292,8 +584,11 @@ function createDefaultExamData() {
     correctAnswers: {},
     marked: [],
     unresolved: [],
+    questionTags: {},
     results: {},
     note: "",
+    answerKey: {},
+    examState: null,
   };
 }
 
@@ -511,18 +806,22 @@ export function saveFolders(folders) {
     return false;
   }
 
-  const saved = writeJson(
-    getFoldersKey(),
-    folders
-  );
-
-  if (saved && !suppressDirty) {
-    folders.forEach((folder) =>
-      markDirty("folders", folder.id)
-    );
+  // Durable pending state BEFORE the entity write when not suppressed.
+  // A successful entity write without a durable dirty mark is the
+  // silent-loss bug; fail closed if the dirty write fails.
+  // Pull writes (cloudWriteDepth > 0) must NOT self-mark. User saves
+  // during suppression (depth 0) enqueue via markDirty so they survive
+  // process death mid-pull.
+  if (!suppressDirty || cloudWriteDepth === 0) {
+    for (const folder of folders) {
+      if (!markDirty("folders", folder.id)) {
+        console.error("Cannot save folders: dirty write failed.");
+        return false;
+      }
+    }
   }
 
-  return saved;
+  return writeJson(getFoldersKey(), folders);
 }
 
 export function createFolder(folder) {
@@ -657,6 +956,19 @@ export function deleteFolder(
         )
     );
 
+  // Deletion intent BEFORE any multi-key destructive write: a crash after
+  // this point leaves tombstones so a later pull cannot resurrect rows.
+  if (!recordLocalDelete("folder", folderId)) {
+    console.error("Cannot delete folder: intent write failed.");
+    return false;
+  }
+  for (const exam of examsToDelete) {
+    if (!recordLocalDelete("exam", exam.id)) {
+      console.error("Cannot delete folder: child exam intent write failed.");
+      return false;
+    }
+  }
+
   if (
     !saveFolders(
       remainingFolders
@@ -676,14 +988,9 @@ export function deleteFolder(
   for (
     const exam of examsToDelete
   ) {
+    // Child exams are already tombstoned above; removeExamData is dirty-first.
     removeExamData(exam.id);
-    // Child exams must be tombstoned too: they are removed locally but
-    // still exist in the cloud — without tombstones every pull would
-    // resurrect them as orphans.
-    recordLocalDelete("exam", exam.id);
   }
-
-  recordLocalDelete("folder", folderId);
 
   notifyLocalChange();
 
@@ -720,18 +1027,16 @@ export function saveExams(exams) {
     return false;
   }
 
-  const saved = writeJson(
-    getExamsKey(),
-    exams
-  );
-
-  if (saved && !suppressDirty) {
-    exams.forEach((exam) =>
-      markDirty("exams", exam.id)
-    );
+  if (!suppressDirty || cloudWriteDepth === 0) {
+    for (const exam of exams) {
+      if (!markDirty("exams", exam.id)) {
+        console.error("Cannot save exams: dirty write failed.");
+        return false;
+      }
+    }
   }
 
-  return saved;
+  return writeJson(getExamsKey(), exams);
 }
 
 export function createExam(exam) {
@@ -885,6 +1190,12 @@ export function deleteExam(examId) {
     return false;
   }
 
+  // Intent before destructive list/examData writes.
+  if (!recordLocalDelete("exam", examId)) {
+    console.error("Cannot delete exam: intent write failed.");
+    return false;
+  }
+
   const updatedExams =
     exams.filter(
       (exam) =>
@@ -908,7 +1219,6 @@ export function deleteExam(examId) {
     );
 
   if (removed) {
-    recordLocalDelete("exam", examId);
     notifyLocalChange();
   }
 
@@ -969,20 +1279,23 @@ export function saveExamData(
   const normalizedData =
     normalizeExamData(data);
 
-  const saved =
-    writeJson(
-      getExamDataKey(examId),
-      normalizedData
-    );
+  if ((!suppressDirty || cloudWriteDepth === 0) && !markDirty("examData", examId)) {
+    console.error("Cannot save exam data: dirty write failed.");
+    return false;
+  }
 
-  if (saved) {
-    markDirty("examData", examId);
+  const saved = writeJson(
+    getExamDataKey(examId),
+    normalizedData
+  );
+
+  if (saved && !suppressDirty) {
     // Cloud→local pulls run under dirty suppression; their writes must
     // not re-trigger the sync engine (a pull firing the local-change
     // event would re-arm the sync loop and hammer the cloud forever).
-    if (!suppressDirty) {
-      notifyLocalChange();
-    }
+    // User saves mid-pull also skip notify — durability is the queue;
+    // flush + fingerprint cover discovery after suppression lifts.
+    notifyLocalChange();
   }
 
   return saved;
@@ -995,15 +1308,15 @@ export function removeExamData(
     return false;
   }
 
-  const removed = removeKey(
-    getExamDataKey(examId)
-  );
-
-  if (removed) {
-    markDirty("examData", examId);
+  // Dirty intent BEFORE removing the entity; fail closed if the mark fails.
+  if (!markDirty("examData", examId)) {
+    console.error("Cannot remove exam data: dirty write failed.");
+    return false;
   }
 
-  return removed;
+  return removeKey(
+    getExamDataKey(examId)
+  );
 }
 
 // =========================================================
@@ -1022,9 +1335,8 @@ export function getActivity(dateString) {
 
 export function saveActivity(dateString, activityData) {
   if (typeof dateString !== "string" || !isObject(activityData)) return false;
-  const saved = writeJson(getActivityKey(dateString), activityData);
-  if (saved) markDirty("activity", dateString);
-  return saved;
+  if ((!suppressDirty || cloudWriteDepth === 0) && !markDirty("activity", dateString)) return false;
+  return writeJson(getActivityKey(dateString), activityData);
 }
 
 export function getActivityRange(startDate, endDate) {
@@ -1066,23 +1378,26 @@ export function getAllActivity() {
 // Settings Storage
 // =========================================================
 
-const SETTINGS_KEY = `${getStoragePrefix()}settings`;
+function getSettingsKey() {
+  return `${getStoragePrefix()}settings`;
+}
 
 const DEFAULT_SETTINGS = {
   language: "fa",
   weatherLocation: { lat: 35.6892, lon: 51.3890, name: "Tehran" },
+  defaultNegativeMarking: true,
+  defaultExamType: "practice",
 };
 
 export function getSettings() {
-  return readJson(SETTINGS_KEY, DEFAULT_SETTINGS);
+  return readJson(getSettingsKey(), DEFAULT_SETTINGS);
 }
 
 export function saveSettings(settings) {
   if (!isObject(settings)) return false;
   const merged = { ...DEFAULT_SETTINGS, ...settings };
-  const saved = writeJson(SETTINGS_KEY, merged);
-  if (saved) markDirty("settings", null);
-  return saved;
+  if ((!suppressDirty || cloudWriteDepth === 0) && !markDirty("settings", null)) return false;
+  return writeJson(getSettingsKey(), merged);
 }
 
 // =========================================================
@@ -1111,11 +1426,11 @@ export function saveSubjects(subjects) {
   if (!Array.isArray(subjects) || !subjects.every(isValidSubject)) {
     return false;
   }
-  const saved = writeJson(getSubjectsKey(), subjects);
-  if (saved && !suppressDirty) {
-    markDirty("subjects", null);
+  if ((!suppressDirty || cloudWriteDepth === 0) && !markDirty("subjects", null)) {
+    console.error("Cannot save subjects: dirty write failed.");
+    return false;
   }
-  return saved;
+  return writeJson(getSubjectsKey(), subjects);
 }
 
 export function createSubject(subject) {
@@ -1147,6 +1462,12 @@ export function deleteSubject(subjectId) {
   const subjects = getSubjects();
   if (!subjects.some((s) => idsEqual(s.id, subjectId))) return false;
 
+  // Intent before multi-key subject/folder writes.
+  if (!recordLocalDelete("subject", subjectId)) {
+    console.error("Cannot delete subject: intent write failed.");
+    return false;
+  }
+
   const remaining = subjects.filter((s) => !idsEqual(s.id, subjectId));
   if (!saveSubjects(remaining)) return false;
 
@@ -1164,7 +1485,6 @@ export function deleteSubject(subjectId) {
     saveFolders(updatedFolders);
   }
 
-  recordLocalDelete("subject", subjectId);
   notifyLocalChange();
   return true;
 }
@@ -1206,17 +1526,28 @@ export function saveTags(tags) {
   if (!Array.isArray(tags) || !tags.every(isValidTag)) {
     return false;
   }
-  const saved = writeJson(getTagsKey(), tags);
-  if (saved && !suppressDirty) {
-    markDirty("tags", null);
+  if ((!suppressDirty || cloudWriteDepth === 0) && !markDirty("tags", null)) {
+    console.error("Cannot save tags: dirty write failed.");
+    return false;
   }
-  return saved;
+  return writeJson(getTagsKey(), tags);
+}
+
+function findDuplicateName(tags, name, excludeId = null) {
+  const needle = String(name).trim().toLowerCase();
+  return tags.some(
+    (t) =>
+      (excludeId == null || !idsEqual(t.id, excludeId)) &&
+      typeof t.name === "string" &&
+      t.name.trim().toLowerCase() === needle
+  );
 }
 
 export function createTag(tag) {
   if (!isValidTag(tag)) return false;
   const tags = getTags();
   if (tags.some((t) => idsEqual(t.id, tag.id))) return false;
+  if (findDuplicateName(tags, tag.name)) return false;
   const saved = saveTags([...tags, tag]);
   if (saved) notifyLocalChange();
   return saved;
@@ -1229,27 +1560,46 @@ export function updateTag(tagId, updates) {
   if (index === -1) return false;
   tags[index] = { ...tags[index], ...updates, id: tags[index].id };
   if (!isValidTag(tags[index])) return false;
+  if (findDuplicateName(tags, tags[index].name, tagId)) return false;
   const saved = saveTags(tags);
   if (saved) notifyLocalChange();
   return saved;
 }
 
-// Deleting a tag removes it from every exam's tagIds (assignments are
-// dropped, exams and their data are untouched).
+// Deleting a tag removes it from every exam's tagIds and from every
+// examData.questionTags assignment (exam bodies/answers are untouched).
 export function deleteTag(tagId) {
   if (!isValidId(tagId)) return false;
 
   const tags = getTags();
   if (!tags.some((t) => idsEqual(t.id, tagId))) return false;
 
-  const remaining = tags.filter((t) => !idsEqual(t.id, tagId));
-  if (!saveTags(remaining)) return false;
+  // 1. Deletion intent BEFORE any entity mutation.
+  if (!recordLocalDelete("tag", tagId)) {
+    console.error("Cannot delete tag: intent write failed.");
+    return false;
+  }
 
-  // Strip the deleted tag from every question's tag list.
+  // 2. Dirty-first for every exam row and examData row that will change —
+  //    mark all before any write so a mid-loop dirty failure cannot leave
+  //    a half-stripped set with no pending sync.
   const exams = getExams();
-  exams.forEach((exam) => {
+  const examDataPlans = [];
+  const examPlans = [];
+  for (const exam of exams) {
+    if (Array.isArray(exam.tagIds) && exam.tagIds.some((id) => idsEqual(id, tagId))) {
+      if (!markDirty("exams", exam.id)) {
+        console.error("Cannot delete tag: exams dirty write failed.");
+        return false;
+      }
+      examPlans.push({
+        exam,
+        data: { ...exam, tagIds: exam.tagIds.filter((id) => !idsEqual(id, tagId)) },
+      });
+    }
+
     const data = readJson(getExamDataKey(exam.id), null);
-    if (!data || !isObject(data) || !isObject(data.questionTags)) return;
+    if (!data || !isObject(data) || !isObject(data.questionTags)) continue;
     let changed = false;
     const map = {};
     Object.entries(data.questionTags).forEach(([key, list]) => {
@@ -1258,13 +1608,36 @@ export function deleteTag(tagId) {
       if (filtered.length !== list.length) changed = true;
       if (filtered.length > 0) map[key] = filtered;
     });
-    if (changed) {
-      writeJson(getExamDataKey(exam.id), { ...data, questionTags: map });
-      markDirty("examData", exam.id);
+    if (!changed) continue;
+    if (!markDirty("examData", exam.id)) {
+      console.error("Cannot delete tag: examData dirty write failed.");
+      return false;
     }
-  });
+    examDataPlans.push({ examId: exam.id, data: { ...data, questionTags: map } });
+  }
 
-  recordLocalDelete("tag", tagId);
+  // 3. Entity writes (saveTags is dirty-first for the tags list).
+  const remaining = tags.filter((t) => !idsEqual(t.id, tagId));
+  if (!saveTags(remaining)) return false;
+
+  if (examPlans.length > 0) {
+    const nextExams = exams.map((exam) => {
+      const plan = examPlans.find((p) => idsEqual(p.exam.id, exam.id));
+      return plan ? plan.data : exam;
+    });
+    if (!saveExams(nextExams)) {
+      console.error("Cannot delete tag: exams write failed.");
+      return false;
+    }
+  }
+
+  for (const plan of examDataPlans) {
+    if (!writeJson(getExamDataKey(plan.examId), plan.data)) {
+      console.error("Cannot delete tag: examData write failed.");
+      return false;
+    }
+  }
+
   notifyLocalChange();
   return true;
 }
@@ -1319,52 +1692,99 @@ export function migrateMarkedToTags() {
   let migratedAny = false;
   const exams = getExams();
   const tags = getTags();
+  const existingTagIds = new Set(tags.map((t) => String(t.id)));
+  const existingExamTagIds = (exam) =>
+    Array.isArray(exam.tagIds)
+      ? exam.tagIds.filter((id) => existingTagIds.has(String(id)))
+      : [];
 
+  // Lazily create __marked__ only when a marked question actually needs it.
   let markedTag = tags.find((t) => t.name === "__marked__");
-  if (!markedTag) {
+  const ensureMarkedTag = () => {
+    if (markedTag) return true;
     markedTag = { id: generateId(), name: "__marked__" };
-    saveTags([...tags, markedTag]);
-  }
+    if (!saveTags([...getTags(), markedTag])) {
+      console.error("Cannot migrate marked questions: tag save failed.");
+      markedTag = null;
+      return false;
+    }
+    return true;
+  };
 
+  let dirtyFailed = false;
   exams.forEach((exam) => {
     const data = readJson(getExamDataKey(exam.id), null);
     if (!data || !isObject(data)) return;
 
     const map = isObject(data.questionTags) ? { ...data.questionTags } : {};
+    const hasMarked =
+      Array.isArray(data.marked) && data.marked.length > 0;
+    const liveExamTagIds = existingExamTagIds(exam);
+    let changed = false;
 
-    // 1. Legacy marked questions → __marked__ tag
-    if (Array.isArray(data.marked)) {
+    // 1. Legacy marked questions → __marked__ tag, then clear the legacy list
+    //    so only tags remain after migration.
+    if (hasMarked) {
+      if (!ensureMarkedTag()) {
+        dirtyFailed = true;
+        return;
+      }
       data.marked.forEach((q) => {
         const key = String(q);
         const list = Array.isArray(map[key]) ? [...map[key]] : [];
         if (!list.some((tid) => idsEqual(tid, markedTag.id))) {
           list.push(markedTag.id);
           map[key] = list;
+          changed = true;
         }
       });
+      data.marked = [];
+      changed = true;
     }
 
     // 2. Exam-level tagIds → every question of the exam gets them
     //    (v2.1.0 semantics: the tag applied to the whole exam).
-    if (Array.isArray(exam.tagIds) && exam.tagIds.length > 0) {
+    //    Skip ids that no longer exist in getTags() so a deleted tag
+    //    cannot be resurrected by a re-run after flag loss.
+    if (liveExamTagIds.length > 0) {
       const count = Number(exam.questionCount) || 0;
       for (let q = 1; q <= count; q += 1) {
         const key = String(q);
         const list = Array.isArray(map[key]) ? [...map[key]] : [];
-        exam.tagIds.forEach((tid) => {
-          if (!list.some((x) => idsEqual(x, tid))) list.push(tid);
+        liveExamTagIds.forEach((tid) => {
+          if (!list.some((x) => idsEqual(x, tid))) {
+            list.push(tid);
+            changed = true;
+          }
         });
-        map[key] = list;
+        if (changed) map[key] = list;
       }
     }
 
-    if (Object.keys(map).length > 0) {
-      writeJson(getExamDataKey(exam.id), { ...data, questionTags: map });
-      markDirty("examData", exam.id);
+    if (changed) {
+      // Dirty-first: never rewrite examData without a durable pending mark.
+      if (!markDirty("examData", exam.id)) {
+        console.error("Cannot migrate marked questions: dirty write failed.");
+        dirtyFailed = true;
+        return;
+      }
+      if (!writeJson(getExamDataKey(exam.id), {
+        ...data,
+        questionTags: map,
+        marked: [],
+      })) {
+        dirtyFailed = true;
+        return;
+      }
       migratedAny = true;
     }
   });
 
+  // Fail closed: a dirty/write failure must not mark the migration
+  // complete — the next run has to retry the unmigrated exams.
+  if (dirtyFailed) {
+    return migratedAny;
+  }
   writeJson(MIGRATION_KEY, true);
   return migratedAny;
 }
@@ -1582,9 +2002,7 @@ function migrateBackup(
   return backup;
 }
 
-export function restoreBackup(
-  backup
-) {
+export function restoreBackup(backup) {
   if (
     !validateBackup(
       backup
@@ -1598,83 +2016,63 @@ export function restoreBackup(
       backup
     );
 
+  // Snapshot BEFORE any destructive write so a mid-restore failure can
+  // roll back to the pre-restore dataset instead of leaving a hole.
+  const snapshot = createBackup();
+  const snapshotKey = `${STORAGE_PREFIX}restore-snapshot`;
+  if (!writeJson(snapshotKey, snapshot)) {
+    return false;
+  }
+
+  const applyDataset = (data) => {
+    if (!writeJson(getFoldersKey(), data.folders)) return false;
+    if (!writeJson(getExamsKey(), data.exams)) return false;
+    for (const [key, value] of Object.entries(data.examData || {})) {
+      if (!key.startsWith(getExamDataPrefix())) continue;
+      if (!writeJson(key, value)) return false;
+    }
+    if (Array.isArray(data.subjects)) {
+      writeJson(getSubjectsKey(), data.subjects);
+    }
+    if (Array.isArray(data.tags)) {
+      writeJson(getTagsKey(), data.tags);
+    }
+    if (Array.isArray(data.activity)) {
+      for (const { date, data: day } of data.activity) {
+        if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) && isObject(day)) {
+          writeJson(getActivityKey(date), day);
+        }
+      }
+    }
+    return true;
+  };
+
   try {
-    const cleared =
-      clearAll();
-
-    if (!cleared) {
-      return false;
+    // 1) Clear only AFTER the snapshot is durable.
+    if (!clearAll()) {
+      throw new Error("clearAll failed");
     }
 
-    if (
-      !writeJson(
-        getFoldersKey(),
-        migratedBackup.folders
-      )
-    ) {
-      return false;
+    // 2) Write the restored dataset.
+    if (!applyDataset(migratedBackup)) {
+      throw new Error("write failed");
     }
 
-    if (
-      !writeJson(
-        getExamsKey(),
-        migratedBackup.exams
-      )
-    ) {
-      return false;
+    // 3) Verify the critical lists round-trip before declaring success.
+    if (JSON.stringify(getFolders()) !== JSON.stringify(migratedBackup.folders)) {
+      throw new Error("folders verify failed");
+    }
+    if (JSON.stringify(getExams()) !== JSON.stringify(migratedBackup.exams)) {
+      throw new Error("exams verify failed");
     }
 
-    for (
-      const [
-        key,
-        value,
-      ] of Object.entries(
-        migratedBackup.examData
-      )
-    ) {
-      if (
-        !key.startsWith(
-          getExamDataPrefix()
-        )
-      ) {
-        continue;
-      }
-
-      if (
-        !writeJson(
-          key,
-          value
-        )
-      ) {
-        return false;
-      }
-    }
-
-    // Restore subjects (optional field — older backups may not have it)
-    if (
-      Array.isArray(migratedBackup.subjects) &&
-      migratedBackup.subjects.length > 0
-    ) {
-      writeJson(getSubjectsKey(), migratedBackup.subjects);
-    }
-
-    // Restore tags (optional field — older backups may not have it)
-    if (
-      Array.isArray(migratedBackup.tags) &&
-      migratedBackup.tags.length > 0
-    ) {
-      writeJson(getTagsKey(), migratedBackup.tags);
-    }
-
-    // Restore daily activity (v3; optional for v1/v2 backups)
     const restoredActivity = {};
     if (
       Array.isArray(migratedBackup.activity) &&
       migratedBackup.activity.length > 0
     ) {
-      migratedBackup.activity.forEach(({ date, data }) => {
-        if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) && isObject(data)) {
-          writeJson(getActivityKey(date), data);
+      migratedBackup.activity.forEach(({ date }) => {
+        if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
           restoredActivity[date] = true;
         }
       });
@@ -1700,13 +2098,32 @@ export function restoreBackup(
       deletes: [],
     });
 
+    removeKey(snapshotKey);
     return true;
   } catch (error) {
     console.error(
-      "Failed to restore backup",
+      "Failed to restore backup — rolling back",
       error
     );
-
+    // Roll back to the pre-restore snapshot so a failed restore never
+    // leaves the user with a half-wiped dataset.
+    try {
+      clearAll();
+      applyDataset(snapshot);
+      writeDirty({
+        folders: true,
+        exams: true,
+        examData: {},
+        subjects: true,
+        activity: {},
+        settings: false,
+        tags: false,
+        deletes: [],
+      });
+    } catch (rollbackError) {
+      console.error("Restore rollback also failed", rollbackError);
+    }
+    removeKey(snapshotKey);
     return false;
   }
 }

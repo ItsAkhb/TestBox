@@ -33,6 +33,69 @@ export function initAndroidBackButton() {
   });
 }
 
+/**
+ * Platform lifecycle → sync wake (spec P8):
+ * - Capacitor resume/pause: flush pending work on resume, flush the
+ *   stopwatch remainder on pause so backgrounding can't lose time.
+ * - Web visibility/focus and online events are handled by
+ *   CloudSyncManager; this hook only covers the native path.
+ */
+export function initPlatformLifecycle({ onResume, onPause } = {}) {
+  if (!isNative()) return () => {};
+
+  let cleanup = () => {};
+  import("@capacitor/app").then(({ App }) => {
+    const resume = App.addListener("resume", () => {
+      try { onResume?.(); } catch { /* wake must never crash */ }
+    });
+    const pause = App.addListener("pause", () => {
+      try { onPause?.(); } catch { /* flush must never crash */ }
+    });
+    cleanup = () => {
+      resume.then((h) => h?.remove?.()).catch(() => {});
+      pause.then((h) => h?.remove?.()).catch(() => {});
+    };
+  }).catch(() => {
+    // Plugin unavailable — web lifecycle events still apply.
+  });
+  return () => cleanup();
+}
+
+/**
+ * Multi-tab coordination (spec P8): BroadcastChannel lock+notify so
+ * two tabs never run overlapping full sync cycles, and a local edit
+ * in one tab wakes the other.
+ */
+export function initSyncBroadcast({ onRemoteChange, onLockRequest } = {}) {
+  if (typeof BroadcastChannel === "undefined") return () => {};
+  const channel = new BroadcastChannel("testbox-sync");
+  const onMessage = (event) => {
+    const data = event?.data;
+    if (!data || typeof data !== "object") return;
+    if (data.type === "local-change") {
+      try { onRemoteChange?.(data); } catch { /* notify must never crash */ }
+    } else if (data.type === "sync-start" || data.type === "sync-end") {
+      try { onLockRequest?.(data); } catch { /* lock must never crash */ }
+    }
+  };
+  channel.addEventListener("message", onMessage);
+  return () => {
+    channel.removeEventListener("message", onMessage);
+    channel.close();
+  };
+}
+
+export function broadcastSyncMessage(message) {
+  if (typeof BroadcastChannel === "undefined") return;
+  try {
+    const channel = new BroadcastChannel("testbox-sync");
+    channel.postMessage(message);
+    channel.close();
+  } catch {
+    // best-effort notify
+  }
+}
+
 export function isNativePlatform() {
   return isNative();
 }

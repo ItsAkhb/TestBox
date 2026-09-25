@@ -1,4 +1,5 @@
 import { forwardRef } from "react";
+import Icon from "./Icon";
 
 const Button = forwardRef(function Button(
   {
@@ -39,9 +40,14 @@ const Button = forwardRef(function Button(
       ref={ref}
       className={classes}
       disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...props}
     >
-      {loading && <span className="btn-spinner" aria-hidden="true">⟳</span>}
+      {loading && (
+        <span className="btn-spinner" aria-hidden="true">
+          <Icon name="loader" size={16} />
+        </span>
+      )}
       {icon && !loading && <span className="btn-icon" aria-hidden="true">{icon}</span>}
       {children}
     </button>

@@ -54,6 +54,8 @@
   --warning-border: #FDE68A;
 
   --danger: #DC2626;
+  --danger-hover: #B91C1C;
+  --danger-active: #991B1B;
   --danger-soft: #FEF2F2;
   --danger-border: #FECACA;
 
@@ -237,6 +239,8 @@
   --warning-border: #78350F;
 
   --danger: #F87171;
+  --danger-hover: #FCA5A5;
+  --danger-active: #F87171;
   --danger-soft: #1C0A0A;
   --danger-border: #7F1D1D;
 

@@ -8,7 +8,8 @@ export default function QuestionNavigator({
   onClose,
   questionNumbers,
   answers,
-  marked,
+  unresolved,
+  currentQuestion,
   onJump,
 }) {
   const { t } = useTranslation();
@@ -19,32 +20,60 @@ export default function QuestionNavigator({
     [questionNumbers]
   );
   const answerMap = useMemo(() => answers || {}, [answers]);
-  const markedList = useMemo(
-    () => (Array.isArray(marked) ? marked : []),
-    [marked]
+  const unresolvedList = useMemo(
+    () => (Array.isArray(unresolved) ? unresolved.map(Number) : []),
+    [unresolved]
   );
+
+  const isUnresolved = (q) => unresolvedList.includes(Number(q));
 
   const stats = useMemo(() => {
     const answered = numbers.filter((q) => answerMap[q] != null && answerMap[q] !== "").length;
     const unanswered = numbers.length - answered;
-    return { answered, unanswered, marked: markedList.length, total: numbers.length };
-  }, [numbers, answerMap, markedList]);
+    return { answered, unanswered, total: numbers.length };
+  }, [numbers, answerMap]);
 
   const visible = useMemo(() => {
     if (filter === "unanswered") {
       return numbers.filter((q) => answerMap[q] == null || answerMap[q] === "");
     }
-    if (filter === "marked") {
-      return numbers.filter((q) => markedList.includes(q));
-    }
     return numbers;
-  }, [numbers, answerMap, markedList, filter]);
+  }, [numbers, answerMap, filter]);
 
   const chips = [
     { id: "all", label: t("exam.workspace.filterAll"), count: stats.total },
     { id: "unanswered", label: t("exam.workspace.filterUnanswered"), count: stats.unanswered },
-    { id: "marked", label: t("exam.workspace.filterMarked"), count: stats.marked },
   ];
+
+  const pct =
+    stats.total > 0
+      ? Math.round((stats.answered / stats.total) * 100)
+      : 0;
+
+  function handleGridKeyDown(event) {
+    const grid = event.currentTarget;
+    const cells = Array.from(
+      grid.querySelectorAll("button.navigator-cell")
+    );
+    const index = cells.indexOf(document.activeElement);
+    if (index === -1 || cells.length === 0) return;
+
+    let next = -1;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      next = index + 1;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      next = index - 1;
+    } else if (event.key === "Home") {
+      next = 0;
+    } else if (event.key === "End") {
+      next = cells.length - 1;
+    }
+
+    if (next >= 0 && next < cells.length) {
+      event.preventDefault();
+      cells[next].focus();
+    }
+  }
 
   return (
     <Modal
@@ -61,18 +90,40 @@ export default function QuestionNavigator({
         <span className="navigator-summary-item">
           <strong>{stats.unanswered}</strong> {t("exam.unanswered")}
         </span>
-        <span className="navigator-summary-item">
-          <strong>{stats.marked}</strong> {t("exam.markedCount")}
+        <span className="navigator-summary-item navigator-summary-pct">
+          <strong>{pct}%</strong> {t("exam.workspace.completion")}
         </span>
+        {unresolvedList.length > 0 && (
+          <span className="navigator-summary-item navigator-summary-unresolved">
+            <strong>{unresolvedList.length}</strong> {t("exam.results.unresolved")}
+          </span>
+        )}
+      </div>
+
+      <div
+        className="navigator-progress"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        aria-label={t("exam.workspace.completion")}
+      >
+        <span
+          className="navigator-progress-fill"
+          style={{ inlineSize: `${pct}%` }}
+          aria-hidden="true"
+        />
       </div>
 
       <div className="navigator-filters" role="tablist" aria-label={t("exam.workspace.navigator")}>
         {chips.map((chip) => (
           <button
             key={chip.id}
+            id={`navigator-filter-${chip.id}`}
             type="button"
             role="tab"
             aria-selected={filter === chip.id}
+            aria-controls="navigator-grid"
             className={`filter-chip ${filter === chip.id ? "active" : ""}`}
             onClick={() => setFilter(chip.id)}
           >
@@ -88,24 +139,35 @@ export default function QuestionNavigator({
           <p>{t("exam.workspace.navigatorEmpty")}</p>
         </div>
       ) : (
-        <div className="navigator-grid">
+        <div
+          id="navigator-grid"
+          className="navigator-grid"
+          role="tabpanel"
+          aria-labelledby={`navigator-filter-${filter}`}
+          onKeyDown={handleGridKeyDown}
+        >
           {visible.map((q) => {
             const isAnswered = answerMap[q] != null && answerMap[q] !== "";
-            const isMarked = markedList.includes(q);
+            const unresolvedMarked = isUnresolved(q);
+            const isCurrent = Number(currentQuestion) === Number(q);
+            const stateLabel = isAnswered
+              ? t("exam.workspace.answered")
+              : t("exam.unanswered");
+            const unresolvedLabel = unresolvedMarked
+              ? `، ${t("exam.results.unresolved")}`
+              : "";
             return (
               <button
                 key={q}
                 type="button"
-                className={`navigator-cell ${isAnswered ? "is-answered" : ""} ${isMarked ? "is-marked" : ""}`}
+                className={`navigator-cell ${isAnswered ? "is-answered" : ""} ${
+                  unresolvedMarked ? "is-unresolved" : ""
+                } ${isCurrent ? "is-current" : ""}`}
                 onClick={() => onJump(q)}
-                aria-label={`${t("exam.answerKey.q")} ${q}`}
+                aria-label={`${t("exam.answerKey.q")} ${q} — ${stateLabel}${unresolvedLabel}`}
+                aria-current={isCurrent ? "true" : undefined}
               >
                 <span className="navigator-cell-num">{q}</span>
-                {isMarked && (
-                  <span className="navigator-cell-flag" aria-hidden="true">
-                    <Icon name="bookmark" size={10} />
-                  </span>
-                )}
               </button>
             );
           })}

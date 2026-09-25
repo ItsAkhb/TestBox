@@ -5,10 +5,22 @@ const fs = require("fs");
 const DIST_DIR = path.join(__dirname, "..", "dist");
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const CONFIG_PATH = path.join(app.getPath("userData"), "desktop-config.json");
+// Google Sign-In returns from the system browser via this custom scheme
+// (must also be listed in Supabase Auth → Redirect URLs).
+const AUTH_PROTOCOL = "testbox";
 
 let mainWindow = null;
 let tray = null;
 let quitRequested = false;
+
+function sendAuthCallbackToRenderer(rawUrl) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send("testbox:auth-callback", rawUrl);
+  } catch {
+    // renderer not ready yet — user can retry sign-in
+  }
+}
 
 // --- "Close to tray" preference (Electron-side, minimal JSON file) ---
 function readCloseToTray() {
@@ -54,6 +66,13 @@ function showMainWindow() {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+  // Wake-from-tray/show: tell the renderer to run a sync cycle so a
+  // long backgrounded window catches up immediately (spec P8).
+  try {
+    mainWindow.webContents.send("testbox:show-wake");
+  } catch {
+    // renderer may not be ready yet — next visibility event covers it
+  }
 }
 
 function createTray() {
@@ -112,7 +131,8 @@ function createWindow() {
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // Open external links in the system browser, never a new Electron
-    // window with Node access.
+    // window with Node access. Google Sign-In intentionally uses this
+    // path (OAuth opens in the system browser; return is testbox://).
     if (/^https?:\/\//i.test(url)) {
       shell.openExternal(url);
     }
@@ -143,9 +163,60 @@ function createWindow() {
   });
 }
 
+// --- Google Sign-In custom-scheme callback (testbox://) ---
+function registerAuthProtocol() {
+  try {
+    if (process.defaultApp) {
+      // Dev: electron .
+      app.setAsDefaultProtocolClient(
+        AUTH_PROTOCOL,
+        process.execPath,
+        [path.resolve(process.argv[1])]
+      );
+    } else {
+      app.setAsDefaultProtocolClient(AUTH_PROTOCOL);
+    }
+  } catch {
+    // Protocol registration is best-effort; installers may need a rebuild
+  }
+}
+
+function extractAuthUrlFromArgv(argv) {
+  return (argv || []).find(
+    (arg) => typeof arg === "string" && arg.startsWith(`${AUTH_PROTOCOL}://`)
+  );
+}
+
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  showMainWindow();
+  sendAuthCallbackToRenderer(url);
+});
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", (_event, argv) => {
+    const authUrl = extractAuthUrlFromArgv(argv);
+    showMainWindow();
+    if (authUrl) {
+      // Give the window a beat to finish loading before IPC send.
+      setTimeout(() => sendAuthCallbackToRenderer(authUrl), 400);
+    }
+  });
+}
+
 app.whenReady().then(() => {
   closeToTrayEnabled = readCloseToTray();
+  registerAuthProtocol();
+
+  // Cold-start deep link: testbox://auth/callback?code=... on Windows
+  const coldStartAuthUrl = extractAuthUrlFromArgv(process.argv);
   createWindow();
+  if (coldStartAuthUrl && mainWindow) {
+    setTimeout(() => sendAuthCallbackToRenderer(coldStartAuthUrl), 600);
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

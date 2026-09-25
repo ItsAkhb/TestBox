@@ -1,45 +1,45 @@
 import { Link, useLocation } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
 import { useTranslation } from "../../i18n";
+import { NAV_ITEMS } from "../../utils/navItems";
 import Icon from "../ui/Icon";
 
-const NAV_ITEMS = [
-  { to: "/", icon: "home", labelKey: "nav.home" },
-  { to: "/folders", icon: "folder", labelKey: "nav.folders" },
-  { to: "/subjects", icon: "book", labelKey: "nav.subjects" },
-  { to: "/calendar", icon: "calendar", labelKey: "nav.calendar" },
-  { to: "/marked", icon: "star", labelKey: "nav.markedShort" },
-];
+const SETTINGS_ITEM = {
+  to: "/settings",
+  path: "/settings",
+  icon: "settings",
+  labelKey: "nav.settings",
+};
 
 export default function MobileNav() {
   const location = useLocation();
-  const { user } = useAuth();
   const { t } = useTranslation();
 
-  const isActive = (to) =>
-    to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
+  const items = [
+    ...NAV_ITEMS.map((item) => ({
+      to: item.path,
+      path: item.path,
+      icon: item.icon,
+      labelKey: item.mobileLabelKey || item.labelKey,
+    })),
+    SETTINGS_ITEM,
+  ];
+
+  const isActive = (path) =>
+    path === "/" ? location.pathname === "/" : location.pathname.startsWith(path);
 
   return (
-    <nav className="mobile-nav" aria-label="Mobile navigation">
-      {NAV_ITEMS.map((item) => (
+    <nav className="mobile-nav" aria-label="Primary navigation">
+      {items.map((item) => (
         <Link
-          key={item.to}
-          to={item.to}
-          className={`mobile-nav-item ${isActive(item.to) ? "active" : ""}`}
-          aria-current={isActive(item.to) ? "page" : undefined}
+          key={item.path}
+          to={item.path}
+          className={`mobile-nav-item ${isActive(item.path) ? "active" : ""}`}
+          aria-current={isActive(item.path) ? "page" : undefined}
         >
           <Icon name={item.icon} size={20} />
           <span>{t(item.labelKey)}</span>
         </Link>
       ))}
-
-      <Link
-        to={user ? "/account" : "/login"}
-        className={`mobile-nav-item ${isActive(user ? "/account" : "/login") ? "active" : ""}`}
-      >
-        <Icon name={user ? "user" : "login"} size={20} />
-        <span>{user ? t("nav.accountShort") : t("nav.login")}</span>
-      </Link>
     </nav>
   );
 }

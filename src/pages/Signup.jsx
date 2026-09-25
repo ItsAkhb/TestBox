@@ -6,7 +6,7 @@ import {
 
 import { supabase } from "../services/supabaseClient";
 import { useTranslation } from "../i18n";
-import LogoMark from "../components/ui/LogoMark";
+import Icon from "../components/ui/Icon";
 
 
 
@@ -30,6 +30,9 @@ function Signup() {
 
   const [error, setError] =
     useState("");
+
+  const [showPassword, setShowPassword] =
+    useState(false);
 
 
 
@@ -158,8 +161,11 @@ function Signup() {
 
 
       <aside className="auth-art" aria-hidden="true">
-        <LogoMark size={72} />
-        <span className="auth-art-brand">TestBox</span>
+        <img
+          className="auth-art-logo"
+          src={`${import.meta.env.BASE_URL}brand/testbox-primary-lockup-dark.svg`}
+          alt=""
+        />
       </aside>
 
       <div className="auth-card">
@@ -250,6 +256,10 @@ function Signup() {
 
             autoComplete="email"
 
+            aria-invalid={error ? "true" : undefined}
+
+            aria-describedby={error ? "signup-error" : undefined}
+
             required
 
           />
@@ -278,7 +288,7 @@ function Signup() {
 
           <input
 
-            type="password"
+            type={showPassword ? "text" : "password"}
 
             value={password}
 
@@ -296,9 +306,31 @@ function Signup() {
 
             minLength={6}
 
+            aria-invalid={error ? "true" : undefined}
+
+            aria-describedby={error ? "signup-error" : undefined}
+
             required
 
           />
+
+          <button
+
+            type="button"
+
+            className="auth-password-toggle"
+
+            onClick={() => setShowPassword((prev) => !prev)}
+
+            aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+
+            aria-pressed={showPassword}
+
+          >
+
+            <Icon name={showPassword ? "eyeOff" : "eye"} size={16} />
+
+          </button>
 
 
 
@@ -317,10 +349,14 @@ function Signup() {
 
             <div
 
+              id="signup-error"
+
               className="
                 auth-message
                 auth-error
               "
+
+              role="alert"
 
             >
 
@@ -447,7 +483,7 @@ function Signup() {
 
 
 
-          حساب داری؟
+          {t("auth.hasAccount")}
 
 
 
@@ -471,7 +507,7 @@ function Signup() {
 
           >
 
-            ورود
+            {t("auth.goToLogin")}
 
 
           </Link>

@@ -16,8 +16,10 @@ import {
 import {
   getExams,
   getExamData,
-  getExamDataKey,
   getFolders,
+  getTags,
+  getQuestionTags,
+  setQuestionTag,
   saveExamData,
 } from "../services/dataService";
 import {
@@ -26,15 +28,25 @@ import {
   recordStudyTime,
   revertQuestion,
 } from "../services/activityTracker";
-import { getQuestionNumbers } from "../services/scoring";
+import { getQuestionNumbers, calculateStats, calculatePercentage, autoScore } from "../services/scoring";
+import {
+  focusVisibleFromIntersection,
+  isWebUnloadPlatform,
+  shouldWarnBeforeUnload,
+  isExamAttemptActive,
+  examEntryDestination,
+} from "../services/timerUi";
 import { useTranslation } from "../i18n";
-import useTimer from "../hooks/useTimer";
+import useTimer, { clearTimerPersisted } from "../hooks/useTimer";
 import useStopwatch from "../hooks/useStopwatch";
 import { useSession } from "../context/SessionContext";
 import ExamTimer from "../components/exam/ExamTimer";
 import QuestionNavigator from "../components/exam/QuestionNavigator";
 import Modal from "../components/ui/Modal";
 import Icon from "../components/ui/Icon";
+import QuestionTagPicker from "../components/exam/QuestionTagPicker";
+import { tagLabel } from "../services/tagLabel";
+import { useToast } from "../context/ToastContext";
 import { motion } from "framer-motion";
 
 const choices = [
@@ -45,73 +57,6 @@ const choices = [
 ];
 
 const QUESTIONS_PER_PAGE = 100;
-
-function calculateStats(
-  results,
-  totalQuestions
-) {
-  let correct = 0;
-  let wrong = 0;
-
-  Object.values(results).forEach(
-    (result) => {
-      if (result === "correct") {
-        correct++;
-      }
-
-      if (result === "wrong") {
-        wrong++;
-      }
-    }
-  );
-
-  const unanswered = Math.max(
-    totalQuestions -
-      correct -
-      wrong,
-    0
-  );
-
-  return {
-    correct,
-    wrong,
-    unanswered,
-  };
-}
-
-function calculatePercentage(
-  correct,
-  wrong,
-  totalQuestions,
-  negativeMarking,
-  resultedQuestions = null
-) {
-  // Denominator: the number of questions with an ACTUAL result when the
-  // caller provides one (practice mode — untouched questions must not
-  // drag the percentage down). Exam mode passes the full total: every
-  // question there ends up correct/wrong/unanswered by design.
-  const denominator =
-    resultedQuestions != null && resultedQuestions > 0
-      ? resultedQuestions
-      : totalQuestions;
-
-  if (!denominator) {
-    return 0;
-  }
-
-  const score = negativeMarking
-    ? correct * 3 - wrong
-    : correct;
-
-  const maxScore = negativeMarking
-    ? denominator * 3
-    : denominator;
-
-  return (
-    (score / maxScore) *
-    100
-  );
-}
 
 function getInitialExam(id) {
   const exams = getExams();
@@ -145,6 +90,8 @@ function ExamContent({ id }) {
     useLocation();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { updateSession, setFocusTimerVisible } = useSession();
+  const { showToast } = useToast();
 
   const [exam] =
     useState(() =>
@@ -170,8 +117,7 @@ function ExamContent({ id }) {
   const [answerKeyData] = useState(() => {
     if (!exam || exam.type !== "exam") return {};
     try {
-      const data = JSON.parse(localStorage.getItem(getExamDataKey(id)) || "{}");
-      return data.answerKey || {};
+      return getExamData(id).answerKey || {};
     } catch {
       return {};
     }
@@ -200,6 +146,10 @@ function ExamContent({ id }) {
     examData?.examState?.status === "completed" &&
     new URLSearchParams(location.search).get("review") === "1";
 
+  // Active timed exam (not review, not practice) — shared by the focus
+  // timer observer and the web beforeunload guard.
+  const isActiveExam = isExamMode && !isReviewMode;
+
   // Exam-mode atmosphere: lets CSS theme the workspace per mode
   // (ink focus slab in active exams). Always cleaned up on unmount.
   useEffect(() => {
@@ -213,12 +163,14 @@ function ExamContent({ id }) {
   // Lifecycle redirect (deferred to useEffect so it never violates hook order —
   // the component previously had early returns before later hooks, which
   // crashed React's reconciler on the finish transition).
+  // Active attempt → stay (examEntryDestination === "exam"); completed →
+  // results; otherwise → start. Leaving the route never clears examState.
   useEffect(() => {
     if (!exam || !isExamMode || isReviewMode) return;
-    const examStatus = examData?.examState?.status;
-    if (examStatus === "completed") {
+    const dest = examEntryDestination(examData);
+    if (dest === "results") {
       navigate(`/exam/${id}/results`, { replace: true });
-    } else if (examStatus !== "in_progress") {
+    } else if (dest === "start") {
       navigate(`/exam/${id}/start`, { replace: true });
     }
   }, [exam, isExamMode, isReviewMode, examData, id, navigate]);
@@ -231,15 +183,21 @@ function ExamContent({ id }) {
   const [showNavigator, setShowNavigator] = useState(false);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
 
-  // Question currently holding keyboard focus — target for 1–4 / M shortcuts.
+  // Per-question tag picker.
+  const [allTags, setAllTags] = useState(() => getTags());
+  const [tagPickerQuestion, setTagPickerQuestion] = useState(null);
+  const [draftTagIds, setDraftTagIds] = useState([]);
+
+  // Question currently holding keyboard focus — target for the 1–4 shortcut.
   const activeQuestionRef = useRef(null);
+  // Mirror of the same value for render-time consumers (navigator current cell).
+  const [currentQuestion, setCurrentQuestion] = useState(null);
   // Guards the finish flow against double-fire (manual confirm + timer expiry).
   const finishingRef = useRef(false);
 
   const {
     answers,
     correctAnswers,
-    marked,
     unresolved,
     results,
     note,
@@ -255,31 +213,30 @@ function ExamContent({ id }) {
         correct: 0,
         wrong: 0,
         unanswered: 0,
+        unresolved: 0,
+        ungraded: 0,
+        total: 0,
       };
     }
 
     return calculateStats(
       results,
-      exam.questionCount || 0
+      exam.questionCount || 0,
+      unresolved
     );
-  }, [
-    exam,
-    results,
-  ]);
+  }, [exam, results, unresolved]);
 
   const percentage = useMemo(() => {
     if (!exam) {
       return 0;
     }
 
-    // Practice mode: only questions with an actual result (correct/wrong)
-    // count toward the percentage — untouched questions must not drag it
-    // down. Exam mode: the whole exam (answered + unanswered) is the
-    // denominator by design.
+    // Practice: correct+wrong+unresolved are "worked on" — unresolved stays
+    // in the denominator. Exam mode: the whole exam by design.
     const resulted =
       isExamMode
         ? exam.questionCount || 0
-        : stats.correct + stats.wrong;
+        : stats.correct + stats.wrong + stats.unresolved;
 
     return calculatePercentage(
       stats.correct,
@@ -293,6 +250,7 @@ function ExamContent({ id }) {
     isExamMode,
     stats.correct,
     stats.wrong,
+    stats.unresolved,
     negativeMarking,
   ]);
 
@@ -496,8 +454,6 @@ function ExamContent({ id }) {
     correctAnswers:
       newCorrectAnswers =
         correctAnswers,
-    marked:
-      newMarked = marked,
     unresolved:
       newUnresolved = unresolved,
     results:
@@ -519,9 +475,6 @@ function ExamContent({ id }) {
 
       correctAnswers:
         newCorrectAnswers === correctAnswers ? base.correctAnswers : newCorrectAnswers,
-
-      marked:
-        newMarked === marked ? base.marked : newMarked,
 
       unresolved:
         newUnresolved === unresolved ? base.unresolved : newUnresolved,
@@ -571,50 +524,47 @@ function ExamContent({ id }) {
       ? current.unresolved
       : [];
 
-    // Auto-score based on answer key
-    let finalStats = null;
+    // Auto-score against the answer key when present (canonical autoScore);
+    // without a key, still persist unresolved markers so results and
+    // activity totals keep unresolved distinct from unanswered.
+    let finalStats;
+    const allQuestionNumbers = getQuestionNumbers(exam);
+
     if (Object.keys(answerKeyData).length > 0) {
-      const updatedResults = { ...current.results };
-      const updatedCorrectAnswers = { ...current.correctAnswers };
-
-      // Authoritative question list from the exam object — NEVER from the key
-      const allQuestionNumbers = getQuestionNumbers(exam);
-
-      let correct = 0;
-      let wrong = 0;
-      let unanswered = 0;
-      let unresolved = 0;
-      let ungraded = 0;
-
-      // Score each question; keyless questions stay ungraded
-      allQuestionNumbers.forEach((questionNumber) => {
-        const userAnswer = currentAnswers[questionNumber];
-        const correctAnswer = answerKeyData[questionNumber];
-
-        if (correctAnswer == null || correctAnswer === "") {
-          ungraded += 1;
-          updatedResults[questionNumber] = "ungraded";
-          return;
+      const scored = autoScore(
+        currentAnswers,
+        answerKeyData,
+        exam.negativeMarking !== false,
+        {
+          questionNumbers: allQuestionNumbers,
+          results: current.results || {},
+          unresolved: currentUnresolved,
         }
+      );
 
-        if (!userAnswer) {
-          // A question the user explicitly marked unresolved counts as
-          // worked-on but is scored as unanswered (no accuracy impact —
-          // it has no correct/incorrect outcome).
-          if (currentUnresolved.includes(questionNumber)) {
-            unresolved += 1;
-            updatedResults[questionNumber] = "unresolved";
-          } else {
-            unanswered += 1;
-          }
-        } else if (String(userAnswer) === String(correctAnswer)) {
+      // Persist outcome markers derived from the same buckets as autoScore
+      const updatedResults = { ...(current.results || {}) };
+      const updatedCorrectAnswers = { ...(current.correctAnswers || {}) };
+      allQuestionNumbers.forEach((questionNumber) => {
+        const detail = scored.details[questionNumber];
+        if (detail === "correct") {
           updatedResults[questionNumber] = "correct";
-          updatedCorrectAnswers[questionNumber] = userAnswer;
-          correct += 1;
-        } else {
+          updatedCorrectAnswers[questionNumber] = currentAnswers[questionNumber];
+        } else if (detail === "wrong") {
           updatedResults[questionNumber] = "wrong";
-          updatedCorrectAnswers[questionNumber] = correctAnswer;
-          wrong += 1;
+          updatedCorrectAnswers[questionNumber] = answerKeyData[questionNumber];
+        } else if (detail === "unresolved") {
+          updatedResults[questionNumber] = "unresolved";
+          // Unresolved may still carry a correct answer — derive from
+          // the key when present, otherwise keep any existing value.
+          const keyEntry = answerKeyData[questionNumber];
+          if (keyEntry != null && keyEntry !== "") {
+            updatedCorrectAnswers[questionNumber] = keyEntry;
+          }
+        } else if (detail === "ungraded") {
+          updatedResults[questionNumber] = "ungraded";
+        } else if (detail === "unanswered") {
+          delete updatedResults[questionNumber];
         }
       });
 
@@ -624,26 +574,65 @@ function ExamContent({ id }) {
       });
 
       finalStats = {
-        correct,
-        wrong,
-        unanswered,
-        unresolved,
-        ungraded,
-        graded: correct + wrong + unanswered + unresolved,
+        correct: scored.correct,
+        wrong: scored.wrong,
+        unanswered: scored.unanswered,
+        unresolved: scored.unresolved,
+        ungraded: scored.ungraded,
+        graded: scored.graded,
+        total: scored.totalQuestions,
+      };
+    } else {
+      // No key: mark unresolved so results page totals still report
+      // unresolved distinctly from unanswered (backward-compatible shape).
+      const updatedResults = { ...(current.results || {}) };
+      currentUnresolved.forEach((questionNumber) => {
+        if (!currentAnswers[questionNumber]) {
+          updatedResults[questionNumber] = "unresolved";
+        }
+      });
+
+      saveData({ results: updatedResults });
+
+      const live = calculateStats(
+        updatedResults,
+        allQuestionNumbers.length,
+        currentUnresolved
+      );
+      finalStats = {
+        correct: live.correct,
+        wrong: live.wrong,
+        unanswered: live.unanswered,
+        unresolved: live.unresolved,
+        ungraded: live.ungraded,
+        graded:
+          live.correct + live.wrong + live.unanswered + live.unresolved,
         total: allQuestionNumbers.length,
       };
     }
 
-    // Update exam state to completed
+    // Update exam state to completed via saveExamData (dirty-first)
     try {
-      const key = getExamDataKey(id);
-      const data = JSON.parse(localStorage.getItem(key) || "{}");
-      data.examState = { ...data.examState, status: "completed", finishedAt: Date.now() };
-      localStorage.setItem(key, JSON.stringify(data));
-      latestExamDataRef.current = { ...latestExamDataRef.current, examState: data.examState };
+      const current = getExamData(id);
+      const nextExamState = {
+        ...current.examState,
+        status: "completed",
+        finishedAt: Date.now(),
+      };
+      saveExamData(id, { ...current, examState: nextExamState });
+      latestExamDataRef.current = { ...latestExamDataRef.current, examState: nextExamState };
+      // Mirror into React state so the session-registration effect sees
+      // completed and cannot re-register a finished attempt before unmount.
+      setExamData((prev) => ({ ...prev, examState: nextExamState }));
     } catch {
       // non-fatal: results page still renders from navigation
     }
+
+    // Completion cleanup: drop the shared TopBar session immediately and
+    // clear the persisted countdown so a remount/reload cannot resurrect
+    // a finished timer. Scoring/activity above are already persisted.
+    updateSession(null);
+    clearTimerPersisted(id);
 
     // Record exam completion in daily activity (idempotent, replaces prior stats)
     if (examMeta && finalStats) {
@@ -652,7 +641,7 @@ function ExamContent({ id }) {
 
     // Navigate to results
     navigate(`/exam/${id}/results`);
-  }, [exam, isExamMode, id, navigate, answerKeyData, examMeta]);
+  }, [exam, isExamMode, id, navigate, answerKeyData, examMeta, updateSession]);
 
   // Timer for exam mode
   const timerDurationSeconds = isExamMode ? (exam?.timerDuration || 60) * 60 : 0;
@@ -677,11 +666,11 @@ function ExamContent({ id }) {
   // Mirror the active timer/stopwatch into the shared session state so
   // the TopBar shows it on every page (no second engine — display only).
   // Exam sessions are wall-clock ({endsAt}) and stay registered across
-  // navigation, matching the persisted timer's own behavior. Practice
+  // navigation only while the attempt is still in_progress. Practice
   // stopwatches pause on unmount (engine behavior) so they clear here.
-  const { updateSession } = useSession();
+  const examStatus = examData?.examState?.status;
   useEffect(() => {
-    if (isExamMode && timer.remaining > 0) {
+    if (isExamMode && isExamAttemptActive(examData) && timer.remaining > 0) {
       updateSession({
         kind: "exam",
         examId: id,
@@ -689,10 +678,11 @@ function ExamContent({ id }) {
         endsAt: Date.now() + timer.remaining * 1000,
       });
     } else if (isExamMode) {
+      // completed / not started / expired — never leave a stale pill
       updateSession(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isExamMode, id, exam?.name, timer.remaining > 0, updateSession]);
+  }, [isExamMode, examStatus, id, exam?.name, timer.remaining > 0, updateSession]);
 
   useEffect(() => {
     if (stopwatchOn && stopwatch.elapsedMs > 0) {
@@ -719,7 +709,8 @@ function ExamContent({ id }) {
 
   // Practice stopwatch: its engine pauses on unmount, so drop the
   // session indicator when leaving the page. Exam sessions persist
-  // (the countdown keeps running like the persisted timer record).
+  // while in_progress (the countdown keeps running like the persisted
+  // timer record); completion clears them in handleFinishExam.
   useEffect(() => {
     return () => {
       updateSession((current) =>
@@ -727,6 +718,72 @@ function ExamContent({ id }) {
       );
     };
   }, [updateSession]);
+
+  // Focus pill → TopBar docking: observe the in-page pill (exam countdown
+  // OR practice stopwatch) so the TopBar copy appears only when the primary
+  // pill leaves the viewport. Display-only — same session state.
+  // Callback ref so the observer attaches as soon as the pill mounts
+  // (object refs can be null on the first effect pass).
+  const focusTimerRef = useRef(null);
+  const [focusTimerEl, setFocusTimerEl] = useState(null);
+  const attachFocusTimerRef = useCallback((node) => {
+    focusTimerRef.current = node;
+    setFocusTimerEl(node);
+  }, []);
+
+  // Practice has no isActiveExam flag — observe whenever either focus
+  // pill (countdown or stopwatch) is the active in-page representation.
+  const shouldObserveFocusPill = isActiveExam || stopwatchOn;
+
+  useEffect(() => {
+    if (!shouldObserveFocusPill || !focusTimerEl) {
+      if (!shouldObserveFocusPill) setFocusTimerVisible(true);
+      return undefined;
+    }
+
+    if (typeof IntersectionObserver === "undefined") {
+      setFocusTimerVisible(true);
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        setFocusTimerVisible(
+          focusVisibleFromIntersection(entry ? entry.isIntersecting : true)
+        );
+      },
+      {
+        // Account for the sticky TopBar so a pill tucked under the header
+        // counts as off-screen; threshold 0 = any pixel still visible.
+        threshold: 0,
+        rootMargin: "-60px 0px 0px 0px",
+      }
+    );
+
+    observer.observe(focusTimerEl);
+    return () => observer.disconnect();
+  }, [shouldObserveFocusPill, focusTimerEl, setFocusTimerVisible]);
+
+  // Web-only native refresh/close warning while an active exam is open.
+  // React Router SPA navigations do not fire beforeunload, so in-app
+  // moves stay unaffected. Listener is removed on leave/unmount.
+  useEffect(() => {
+    if (!shouldWarnBeforeUnload({ activeExam: isActiveExam, platformIsWeb: isWebUnloadPlatform() })) {
+      return undefined;
+    }
+
+    const onBeforeUnload = (event) => {
+      // Standard mechanism: preventDefault (+ empty returnValue for older
+      // Chromium). No custom message — browsers ignore that now.
+      event.preventDefault();
+      event.returnValue = "";
+      return "";
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isActiveExam]);
 
   function handleStopwatchPause() {
     const flushed = stopwatch.pause();
@@ -863,17 +920,27 @@ function ExamContent({ id }) {
     questionNumber,
     answer
   ) {
-    const currentCorrect = (latestExamDataRef.current || examData).correctAnswers;
+    const currentBase =
+      latestExamDataRef.current || examData;
+    const currentCorrect = currentBase.correctAnswers;
 
     const result =
-      (latestExamDataRef.current || examData).results[
+      currentBase.results[
         questionNumber
       ];
 
-    // پاسخ صحیح فقط وقتی قابل تعیین است
-    // که تست غلط اعلام شده باشد.
+    const isUnresolved =
+      Array.isArray(currentBase.unresolved) &&
+      currentBase.unresolved.includes(
+        questionNumber
+      );
+
+    // Correct answer may be set when the question is marked wrong OR
+    // unresolved — unresolved is a valid state alongside a key/answer.
+    // Never mutates `unresolved` (assigning a key does not resolve).
     if (
-      result !== "wrong"
+      result !== "wrong" &&
+      !isUnresolved
     ) {
       return;
     }
@@ -916,32 +983,74 @@ function ExamContent({ id }) {
     });
   }
 
-  function toggleMark(
-    questionNumber
-  ) {
-    const currentMarked = (latestExamDataRef.current || examData).marked;
+  function openTagPicker(questionNumber) {
+    setAllTags(getTags());
+    setDraftTagIds(
+      getQuestionTags(id, questionNumber).map((tagId) => String(tagId))
+    );
+    setTagPickerQuestion(questionNumber);
+  }
 
-    const isMarked =
-      currentMarked.includes(
-        questionNumber
-      );
+  function toggleDraftTag(tagId) {
+    setDraftTagIds((prev) =>
+      prev.includes(tagId)
+        ? prev.filter((sid) => sid !== tagId)
+        : [...prev, tagId]
+    );
+  }
 
-    const updatedMarked =
-      isMarked
-        ? currentMarked.filter(
-            (number) =>
-              number !==
-              questionNumber
-          )
-        : [
-            ...currentMarked,
-            questionNumber,
-          ];
+  // Persist via setQuestionTag (idempotent, dirty-first) then re-sync Exam's
+  // latestExamDataRef from storage so a later saveData cannot clobber tags.
+  function commitQuestionTags(questionNumber, nextTagIds) {
+    const current = getQuestionTags(id, questionNumber).map(String);
+    const next = [...new Set(nextTagIds.map(String))];
+    let ok = true;
 
-    saveData({
-      marked:
-        updatedMarked,
-    });
+    for (const tagId of next) {
+      if (!current.includes(tagId)) {
+        ok = setQuestionTag(id, questionNumber, tagId, true) && ok;
+      }
+    }
+    for (const tagId of current) {
+      if (!next.includes(tagId)) {
+        ok = setQuestionTag(id, questionNumber, tagId, false) && ok;
+      }
+    }
+
+    if (!ok) {
+      showToast(t("tags.assignFailed"), "error");
+      return false;
+    }
+
+    const fresh = getExamData(id);
+    latestExamDataRef.current = fresh;
+    setExamData(fresh);
+    setAllTags(getTags());
+    return true;
+  }
+
+  function handleTagPickerConfirm() {
+    if (tagPickerQuestion == null) return;
+    if (commitQuestionTags(tagPickerQuestion, draftTagIds)) {
+      setTagPickerQuestion(null);
+      setDraftTagIds([]);
+    }
+  }
+
+  function handleTagPickerClose() {
+    setTagPickerQuestion(null);
+    setDraftTagIds([]);
+  }
+
+  function tagsForQuestion(questionNumber) {
+    const ids =
+      examData?.questionTags?.[String(questionNumber)];
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    return ids
+      .map((tagId) =>
+        allTags.find((tag) => String(tag.id) === String(tagId))
+      )
+      .filter(Boolean);
   }
 
   // First-class "unresolved" state: the user worked on the question but
@@ -977,20 +1086,18 @@ function ExamContent({ id }) {
       return;
     }
 
-    // Mark unresolved: drop any selected answer, manual result, and
-    // practice correct-answer record — the question has no answer.
+    // Mark unresolved: drop any selected answer and manual result —
+    // the user gave no answer. Keep any correct-answer/key value so
+    // "unresolved + correct answer" remains a valid persisted state.
     const updatedAnswers = { ...current.answers };
     const updatedResults = { ...current.results };
-    const updatedCorrectAnswers = { ...current.correctAnswers };
 
     delete updatedAnswers[questionNumber];
     delete updatedResults[questionNumber];
-    delete updatedCorrectAnswers[questionNumber];
 
     saveData({
       answers: updatedAnswers,
       results: updatedResults,
-      correctAnswers: updatedCorrectAnswers,
       unresolved: [...currentUnresolved, questionNumber],
     });
 
@@ -1139,6 +1246,7 @@ function ExamContent({ id }) {
 
   function jumpToQuestion(questionNumber) {
     setShowNavigator(false);
+    setCurrentQuestion(questionNumber);
 
     const questionIndex =
       questionNumbers.findIndex(
@@ -1168,16 +1276,14 @@ function ExamContent({ id }) {
     }
   }
 
-  // Keyboard answering: 1–4 selects an option and M toggles the mark on the
-  // focused question row. Ignored while typing and in read-only review.
+  // Keyboard answering: 1–4 selects an option on the focused question row.
+  // Ignored while typing and in read-only review.
   // Handlers are reached through refs so the listener always calls the
   // latest closure without re-subscribing (same pattern as saveData).
   const selectAnswerRef = useRef(null);
-  const toggleMarkRef = useRef(null);
 
   useEffect(() => {
     selectAnswerRef.current = selectAnswer;
-    toggleMarkRef.current = toggleMark;
   });
 
   useEffect(() => {
@@ -1219,12 +1325,6 @@ function ExamContent({ id }) {
       ) {
         event.preventDefault();
         selectAnswerRef.current?.(active, event.key);
-      } else if (
-        event.key === "m" ||
-        event.key === "M"
-      ) {
-        event.preventDefault();
-        toggleMarkRef.current?.(active);
       }
     }
 
@@ -1241,10 +1341,7 @@ function ExamContent({ id }) {
     };
   }, [isReviewMode]);
 
-  const isActiveExam = isExamMode && !isReviewMode;
-
   const safeAnswers = answers || {};
-  const safeMarked = Array.isArray(marked) ? marked : [];
   const unresolvedList = Array.isArray(unresolved) ? unresolved : [];
   const answeredCount = Object.keys(safeAnswers).length;
   const totalCount = questionNumbers.length;
@@ -1327,9 +1424,14 @@ function ExamContent({ id }) {
               {t("exam.workspace.answered")}
             </span>
 
+            <span className="focusbar-count-pct">
+              {progressPct}%
+            </span>
+
           </div>
 
           <ExamTimer
+            ref={attachFocusTimerRef}
             formatted={timer.formatted}
             isWarning={timer.isWarning}
             isCritical={timer.isCritical}
@@ -1346,14 +1448,10 @@ function ExamContent({ id }) {
             }
             aria-label={t("exam.workspace.navigator")}
             title={t("exam.workspace.navigator")}
+            aria-haspopup="dialog"
+            aria-expanded={showNavigator}
           >
             <Icon name="grid" size={18} />
-            {safeMarked.length > 0 && (
-              <span
-                className="focusbar-nav-dot"
-                aria-hidden="true"
-              />
-            )}
           </button>
 
           <button
@@ -1445,6 +1543,7 @@ function ExamContent({ id }) {
           {stopwatchOn && (
             <div className="stopwatch-cluster" role="group" aria-label={t("exam.stopwatch.elapsed")}>
               <ExamTimer
+                ref={attachFocusTimerRef}
                 mode="stopwatch"
                 formatted={stopwatch.formatted}
               />
@@ -1500,22 +1599,6 @@ function ExamContent({ id }) {
               {t("exam.results.title")}
             </Link>
           )}
-
-          <div className="marked-counter">
-
-            <span className="marked-counter-icon">
-              <Icon name="star" size={15} />
-            </span>
-
-            <strong>
-              {marked.length}
-            </strong>
-
-            <span>
-              {t("exam.markedCount")}
-            </span>
-
-          </div>
 
         </div>
 
@@ -1579,11 +1662,38 @@ function ExamContent({ id }) {
 
         </div>
 
+        {stats.unresolved > 0 && (
+          <div className="exam-stat unresolved">
+
+            <strong>
+              {stats.unresolved}
+            </strong>
+
+            <span>
+              {t("exam.results.unresolved")}
+            </span>
+
+          </div>
+        )}
+
       </div>
       </>
       )}
 
       <div className="answer-sheet">
+
+        {visibleQuestionNumbers.length === 0 ? (
+          <div className="empty-state exam-empty-sheet">
+            <div className="empty-icon">
+              <Icon name="fileText" size={24} />
+            </div>
+            <h3>{t("exam.emptySheet.title")}</h3>
+            <p>{t("exam.emptySheet.description")}</p>
+            <Link to="/folders" className="primary-button">
+              {t("exam.backToFolders")}
+            </Link>
+          </div>
+        ) : null}
 
         {visibleQuestionNumbers.map(
           (
@@ -1606,11 +1716,6 @@ function ExamContent({ id }) {
               correctAnswers[
                 questionNumber
               ];
-
-            const isMarked =
-              marked.includes(
-                questionNumber
-              );
 
             const isUnresolved =
               Array.isArray(
@@ -1637,10 +1742,12 @@ function ExamContent({ id }) {
                 onFocus={() => {
                   activeQuestionRef.current =
                     questionNumber;
+                  setCurrentQuestion(questionNumber);
                 }}
                 onMouseDown={() => {
                   activeQuestionRef.current =
                     questionNumber;
+                  setCurrentQuestion(questionNumber);
                 }}
                 className={`question-row question-enter ${
                   isActiveExam
@@ -1651,8 +1758,12 @@ function ExamContent({ id }) {
                     ? "is-review"
                     : ""
                 } ${
-                  isMarked
-                    ? "question-marked"
+                  isUnresolved
+                    ? "is-unresolved"
+                    : ""
+                } ${
+                  !isExamMode && selected
+                    ? "is-answered-live"
                     : ""
                 } ${
                   result ===
@@ -1776,7 +1887,8 @@ function ExamContent({ id }) {
 
                             const canSelectCorrect =
                               result ===
-                              "wrong";
+                                "wrong" ||
+                              isUnresolved;
 
                             return (
                               <button
@@ -1785,7 +1897,8 @@ function ExamContent({ id }) {
                                 }
                                 type="button"
                                 disabled={
-                                  !canSelectCorrect
+                                  !canSelectCorrect ||
+                                  isReviewMode
                                 }
                                 aria-label={t("exam.a11y.setCorrectAnswer", {
                                   choice,
@@ -1805,7 +1918,6 @@ function ExamContent({ id }) {
                                     choice
                                   )
                                 }
-                                disabled={isReviewMode}
                               >
                                 {choice}
                               </button>
@@ -1924,47 +2036,54 @@ function ExamContent({ id }) {
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  aria-label={
-                    isMarked
-                      ? t("exam.a11y.unmarkQuestion", {
-                          q: questionNumber,
-                        })
-                      : t("exam.a11y.markQuestion", {
-                          q: questionNumber,
-                        })
-                  }
-                  aria-pressed={
-                    isMarked
-                  }
-                  className={`mark-button ${
-                    isMarked
-                      ? "marked"
-                      : ""
-                  }`}
-                  onClick={() =>
-                    toggleMark(
-                      questionNumber
-                    )
-                  }
-                  disabled={isReviewMode}
-                  title={
-                    isMarked
-                      ? t("exam.a11y.unmarkQuestion", {
-                          q: questionNumber,
-                        })
-                      : t("exam.a11y.markQuestion", {
-                          q: questionNumber,
-                        })
-                  }
-                >
-                  <Icon
-                    name="star"
-                    size={16}
-                    fill={isMarked ? "currentColor" : "none"}
-                  />
-                </button>
+                <div className="question-actions">
+                  {(() => {
+                    const assignedTags = tagsForQuestion(questionNumber);
+                    const hasTags = assignedTags.length > 0;
+                    const tagTitle = hasTags
+                      ? assignedTags.map((tag) => tagLabel(tag, t)).join("، ")
+                      : t("exam.a11y.addTags", { q: questionNumber });
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          className={`tag-button ${hasTags ? "has-tags" : ""}`}
+                          aria-label={
+                            hasTags
+                              ? t("exam.a11y.editTags", { q: questionNumber })
+                              : t("exam.a11y.addTags", { q: questionNumber })
+                          }
+                          title={tagTitle}
+                          onClick={() => openTagPicker(questionNumber)}
+                        >
+                          <Icon name="tag" size={15} />
+                          {hasTags && (
+                            <>
+                              <span className="tag-button-dots" aria-hidden="true">
+                                {assignedTags.slice(0, 3).map((tag) => (
+                                  <span
+                                    key={tag.id}
+                                    className="filter-dot"
+                                    style={{
+                                      backgroundColor: tag.color || "#4A90E2",
+                                    }}
+                                  />
+                                ))}
+                              </span>
+                              <span className="tag-button-label">
+                                {assignedTags.length === 1
+                                  ? tagLabel(assignedTags[0], t)
+                                  : t("exam.a11y.tagCount", {
+                                      count: assignedTags.length,
+                                    })}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      </>
+                    );
+                  })()}
+                </div>
 
               </div>
             );
@@ -1972,6 +2091,23 @@ function ExamContent({ id }) {
         )}
 
       </div>
+
+      <QuestionTagPicker
+        open={tagPickerQuestion != null}
+        onClose={handleTagPickerClose}
+        onConfirm={handleTagPickerConfirm}
+        onToggle={toggleDraftTag}
+        tags={allTags}
+        selectedIds={draftTagIds}
+        subtitle={
+          tagPickerQuestion != null
+            ? t("tags.assignSubtitle", {
+                exam: exam?.name || "",
+                q: tagPickerQuestion,
+              })
+            : null
+        }
+      />
 
       {totalPages > 1 && (
         <div className="exam-pagination">
@@ -2065,7 +2201,8 @@ function ExamContent({ id }) {
         }
         questionNumbers={questionNumbers}
         answers={answers}
-        marked={marked}
+        unresolved={unresolvedList}
+        currentQuestion={currentQuestion}
         onJump={jumpToQuestion}
       />
 
@@ -2094,16 +2231,6 @@ function ExamContent({ id }) {
               <span>
                 {t("exam.workspace.finishUnanswered", {
                   count: unansweredCount,
-                })}
-              </span>
-            </div>
-          )}
-          {safeMarked.length > 0 && (
-            <div className="finish-summary-row is-marked">
-              <Icon name="star" size={16} />
-              <span>
-                {t("exam.workspace.finishMarked", {
-                  count: safeMarked.length,
                 })}
               </span>
             </div>

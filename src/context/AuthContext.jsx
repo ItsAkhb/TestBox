@@ -11,6 +11,14 @@ import {
   setStorageUser,
 } from "../services/dataService";
 
+import {
+  deriveOAuthRedirectTo,
+  detectAuthPlatform,
+  startGoogleSignIn,
+  handleAuthCallback,
+  isAuthCallbackUrl,
+} from "../services/authFlow";
+
 
 const AuthContext = createContext(null);
 
@@ -20,6 +28,28 @@ const AuthContext = createContext(null);
 // flipping to the anonymous namespace — which would make local data
 // appear to vanish.
 const LAST_USER_KEY = "testbox-last-user";
+
+// Four-state auth model (spec P6):
+//   authenticated       — live session, online
+//   needs_revalidation  — identity cached, token refresh pending/offline
+//   logged_out          — user explicitly signed out
+//   unknown             — still resolving on boot
+// Timeout / network failure NEVER maps to logged_out.
+export function deriveAuthState({ session, user, loading, networkOnline, supabaseReachable }) {
+  if (loading) return "unknown";
+  if (session?.user) {
+    if (networkOnline === false || supabaseReachable === false) {
+      return "needs_revalidation";
+    }
+    return "authenticated";
+  }
+  if (user) {
+    // No live session but a cached identity is present: offline
+    // revalidation pending — not logged out.
+    return "needs_revalidation";
+  }
+  return "logged_out";
+}
 
 function readLastUserId() {
   try {
@@ -60,7 +90,26 @@ export function AuthProvider({
 
   const [supabaseReachable, setSupabaseReachable] = useState(!readOnline() ? false : null);
 
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const [googleError, setGoogleError] = useState("");
+
   const isOffline = networkOnline === false || supabaseReachable === false;
+
+  // Offline identity: session user, else the last user id kept for
+  // storage-namespace continuity. Without this, a failed refresh while
+  // offline would derive "logged_out" even though the account is cached.
+  const cachedIdentity =
+    session?.user ??
+    (readLastUserId() ? { id: readLastUserId() } : null);
+
+  const authState = deriveAuthState({
+    session,
+    user: cachedIdentity,
+    loading,
+    networkOnline,
+    supabaseReachable,
+  });
 
   // Reaching the auth endpoint is a cheap, reliable Supabase probe.
   useEffect(() => {
@@ -227,6 +276,107 @@ export function AuthProvider({
 
   }, [networkOnline, supabaseReachable]);
 
+  // Custom-scheme OAuth return (Electron testbox:// or Android intent).
+  // Web PKCE returns are handled by supabase-js detectSessionInUrl.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function finishCallback(url) {
+      if (!url || cancelled) return;
+      const result = await handleAuthCallback(supabase.auth, url);
+      if (!result.ok && result.error && result.error !== "no_code") {
+        if (!cancelled) {
+          setGoogleError("auth.google.error");
+        }
+      }
+      if (!cancelled) setGoogleLoading(false);
+    }
+
+    // Current URL may already be a callback on boot (deep link open).
+    if (typeof window !== "undefined" && isAuthCallbackUrl(window.location.href)) {
+      finishCallback(window.location.href);
+    }
+
+    const unsubscribers = [];
+
+    // Capacitor appUrlOpen
+    if (window.Capacitor?.isNativePlatform?.()) {
+      import("@capacitor/app")
+        .then(({ App }) => {
+          if (cancelled) return;
+          App.addListener("appUrlOpen", ({ url }) => {
+            finishCallback(url);
+          }).then((handle) => {
+            if (handle) unsubscribers.push(() => handle.remove?.());
+          });
+        })
+        .catch(() => {});
+    }
+
+    // Electron preload bridge
+    if (window.testboxDesktop?.onAuthCallback) {
+      const off = window.testboxDesktop.onAuthCallback((url) => {
+        finishCallback(url);
+      });
+      if (typeof off === "function") unsubscribers.push(off);
+    }
+
+    return () => {
+      cancelled = true;
+      unsubscribers.forEach((off) => {
+        try {
+          off();
+        } catch {
+          // listener already gone
+        }
+      });
+    };
+  }, []);
+
+  async function signInWithGoogle() {
+    setGoogleError("");
+    setGoogleLoading(true);
+
+    try {
+      const platform = detectAuthPlatform(window);
+      const siteUrl = import.meta.env.VITE_SITE_URL || "";
+      const redirectTo = deriveOAuthRedirectTo({
+        origin: window.location.origin,
+        baseUrl: import.meta.env.BASE_URL || "/",
+        protocol: window.location.protocol,
+        siteUrl,
+        platform,
+      });
+
+      // Electron/Android: open the system browser and wait for the
+      // custom-scheme callback. Web: supabase-js performs the redirect.
+      const openExternal = platform.needsCustomScheme
+        ? (url) => {
+            try {
+              window.open(url, "_blank");
+            } catch {
+              // popup blocked — user can retry
+            }
+          }
+        : undefined;
+
+      const result = await startGoogleSignIn(supabase.auth, {
+        redirectTo,
+        openExternal,
+      });
+
+      if (!result.ok) {
+        setGoogleError("auth.google.error");
+        setGoogleLoading(false);
+      }
+      // On success with in-browser redirect, the page navigates away;
+      // leave googleLoading true until unload. External-open path also
+      // stays loading until the custom-scheme callback finishes.
+    } catch {
+      setGoogleError("auth.google.error");
+      setGoogleLoading(false);
+    }
+  }
 
   return (
     <AuthContext.Provider
@@ -239,6 +389,13 @@ export function AuthProvider({
         isOffline,
         networkOnline,
         supabaseReachable,
+        authState,
+        // Offline identity: last user id kept for storage namespace
+        // continuity even when there is no live session object.
+        cachedUserId: cachedIdentity?.id ?? null,
+        googleLoading,
+        googleError,
+        signInWithGoogle,
       }}
     >
       {children}

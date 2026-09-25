@@ -10,11 +10,6 @@ function Layout() {
   const location = useLocation();
 
   useEffect(() => {
-    const saved = localStorage.getItem("testbox-theme") || "light";
-    document.documentElement.setAttribute("data-theme", saved);
-  }, []);
-
-  useEffect(() => {
     initAndroidBackButton(null, location.pathname);
   }, []);
 

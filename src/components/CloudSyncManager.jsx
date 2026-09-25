@@ -5,6 +5,7 @@ import {
 } from "react";
 
 import { useAuth } from "../context/AuthContext";
+import { useOfflineMode } from "../context/OfflineModeContext";
 
 import {
   getFolders,
@@ -19,6 +20,7 @@ import {
   hasPendingLocalChanges,
   markTombstonesPushed,
   setStorageUser,
+  getSuppressedOpCount,
 } from "../services/dataService";
 
 import {
@@ -27,6 +29,8 @@ import {
 } from "../services/cloudSync";
 
 import { supabase } from "../services/supabaseClient";
+
+import { initSyncBroadcast } from "../services/native";
 
 import { useSync } from "../context/SyncContext";
 
@@ -47,7 +51,10 @@ function computeBackoffMs(attempt) {
 
 function CloudSyncManager() {
 
-  const { user, isOffline } = useAuth();
+  const { user } = useAuth();
+  // Manual offline (user-selected) OR network/probe offline both pause
+  // the engine; only Go Online / reconnect resumes it.
+  const { offline: effectiveOffline } = useOfflineMode();
 
   const {
     syncStatus,
@@ -70,8 +77,8 @@ function CloudSyncManager() {
     useRef(false);
 
   useEffect(() => {
-    offlineRef.current = isOffline;
-  }, [isOffline]);
+    offlineRef.current = effectiveOffline;
+  }, [effectiveOffline]);
 
 
 
@@ -136,11 +143,11 @@ function CloudSyncManager() {
 
     await syncLocalToCloud(userId, { dirty });
 
-    // Tombstone ack: the push applied every cloud delete (idempotent).
-    // Tombstones themselves persist (TTL) so pulls keep filtering, but
-    // they stop counting as pending here.
+    // Tombstone ack: acknowledge ONLY the snapshot pushed this cycle.
+    // A delete that landed mid-push (or a re-delete of the same id)
+    // stays pending for the next cycle — never ack the whole registry.
     if (dirty.deletes.length > 0) {
-      markTombstonesPushed();
+      markTombstonesPushed(dirty.deletes.map((d) => ({ ...d })));
     }
 
     // Tombstones are deliberately NOT cleared after a push. They persist
@@ -542,47 +549,41 @@ function CloudSyncManager() {
 
 
     function handleLocalChange() {
-
-
       syncLocalChanges();
-
-
     }
 
+    // Platform resume / show-wake (Capacitor + Electron): drain durable
+    // pending work immediately — same engine as manual sync.
+    function handleResumeWake() {
+      backoffAttemptRef.current = 0;
+      if (offlineRef.current) {
+        pendingSyncRef.current = true;
+        setSyncStatus(hasPendingLocalChanges() ? "pending" : "offline");
+        return;
+      }
+      syncLocalChanges();
+    }
 
+    window.addEventListener("testbox-local-change", handleLocalChange);
+    window.addEventListener("testbox-resume", handleResumeWake);
+    window.addEventListener("testbox:show-wake", handleResumeWake);
 
-
-
-    window.addEventListener(
-      "testbox-local-change",
-      handleLocalChange
-    );
-
-
-
-
+    // Multi-tab: a local edit in another tab wakes this one.
+    const disposeBroadcast = initSyncBroadcast({
+      onRemoteChange: () => {
+        if (!offlineRef.current) syncLocalChanges();
+      },
+    });
 
     initializeSync();
 
-
-
-
-
     return () => {
-
-
       cancelled = true;
-
-
-      window.removeEventListener(
-        "testbox-local-change",
-        handleLocalChange
-      );
-
-
+      window.removeEventListener("testbox-local-change", handleLocalChange);
+      window.removeEventListener("testbox-resume", handleResumeWake);
+      window.removeEventListener("testbox:show-wake", handleResumeWake);
+      disposeBroadcast();
     };
-
-
 
   }, [
     user,
@@ -591,15 +592,15 @@ function CloudSyncManager() {
     clearBackoff,
     scheduleRetry,
     pushAndClearDirty,
-    isOffline,
+    effectiveOffline,
   ]);
 
 
 
-  // When connectivity returns, immediately flush pending changes.
+  // When connectivity returns (or the user exits offline mode), immediately flush pending changes.
   useEffect(() => {
-    if (isOffline || !user) {
-      if (isOffline && user) {
+    if (effectiveOffline || !user) {
+      if (effectiveOffline && user) {
         setSyncStatus(
           hasPendingLocalChanges() ? "pending" : "offline"
         );
@@ -616,7 +617,7 @@ function CloudSyncManager() {
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOffline, user]);
+  }, [effectiveOffline, user]);
 
 
 
@@ -639,7 +640,7 @@ function CloudSyncManager() {
       if (stopped || !user || syncingRef.current) return;
       if (offlineRef.current || navigator.onLine === false) return;
       if (hasPendingLocalChanges()) {
-        syncLocalChangesRef.current?.();
+        await syncLocalChangesRef.current?.();
         return;
       }
       // No local work: probe cloud counts vs local. Equal → idle.
@@ -652,27 +653,18 @@ function CloudSyncManager() {
             .eq("user_id", uid);
           return error ? null : count ?? 0;
         };
-        const [cloudFolders, cloudExams, cloudSubjects, cloudTags] =
+        const [cloudFolders, cloudExams] =
           await Promise.all([
             probe("folders"),
             probe("exams"),
-            // Missing tables probe as null → treated as "unknown", not
-            // a difference; no resurrection risk from a failed probe.
-            probe("subjects"),
-            probe("tags"),
           ]);
         if (cloudFolders === null && cloudExams === null) return;
-        const localFolders = getFolders().length;
-        const localExams = getExams().length;
-        const localSubjects = getSubjects().length;
-        const localTags = getTags().length;
-        const differs =
-          (cloudFolders !== null && cloudFolders !== localFolders) ||
-          (cloudExams !== null && cloudExams !== localExams) ||
-          (cloudSubjects !== null && cloudSubjects !== localSubjects) ||
-          (cloudTags !== null && cloudTags !== localTags);
-        if (differs && !stopped) {
-          syncLocalChangesRef.current?.();
+        // Equal counts still hide renames and same-count edits — wake
+        // for a full cycle whenever we're clean and online. Count
+        // equality is only a cheap "definitely different" signal, not
+        // proof that nothing changed.
+        if (!stopped) {
+          await syncLocalChangesRef.current?.();
         }
       } catch {
         // reconciliation is opportunistic; next tick retries
@@ -719,6 +711,7 @@ function CloudSyncManager() {
         return {
           status: syncStatus,
           pendingTypes,
+          suppressedOps: getSuppressedOpCount(),
           retry: backoffAttemptRef.current,
           offline: offlineRef.current,
         };

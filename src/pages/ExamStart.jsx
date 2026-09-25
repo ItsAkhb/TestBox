@@ -3,10 +3,15 @@ import { useTranslation } from "../i18n";
 import {
   getExams,
   getExamData,
-  getExamDataKey,
   getFolders,
   getSubjects,
+  saveExamData,
 } from "../services/dataService";
+import {
+  canStartNewAttempt,
+  shouldBypassExamStart,
+} from "../services/timerUi";
+import { useToast } from "../context/ToastContext";
 import { getQuestionNumbers } from "../services/scoring";
 import Icon from "../components/ui/Icon";
 
@@ -43,6 +48,7 @@ export default function ExamStart() {
   const { id } = useParams();
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { showToast } = useToast();
 
   const exam = getExam(id);
   const examData = getExamData(id);
@@ -69,6 +75,13 @@ export default function ExamStart() {
     return <Navigate to={`/exam/${id}/results`} replace />;
   }
 
+  // Active unfinished session: never show ExamStart (Begin would create a
+  // second attempt). Bypass straight into the live Exam view — same examId,
+  // same examState, same testbox-timer-${id} record.
+  if (shouldBypassExamStart(examData)) {
+    return <Navigate to={`/exam/${id}`} replace />;
+  }
+
   const folder = (getFolders() || []).find((f) => String(f.id) === String(exam.folderId)) || null;
   const subject = folder?.subjectId != null
     ? (getSubjects() || []).find((s) => String(s.id) === String(folder.subjectId)) || null
@@ -80,6 +93,14 @@ export default function ExamStart() {
   const remainingSeconds = isResumable ? readRemainingSeconds(id) : null;
 
   function handleStart() {
+    const current = getExamData(id);
+
+    // Never start a second attempt over a live session (race with resume).
+    if (!canStartNewAttempt(current)) {
+      navigate(`/exam/${id}`);
+      return;
+    }
+
     // Initialize exam state
     const examState = {
       status: "in_progress",
@@ -87,14 +108,19 @@ export default function ExamStart() {
       remainingSeconds: duration * 60,
     };
 
-    // Save exam state to localStorage
+    // Persist via saveExamData (dirty-first; examState is syncable).
+    // saveExamData returns false on failure — it does not throw. A silent
+    // failure would leave Exam with examState null → redirect back here and
+    // the next Begin would wipe the attempt. Fail closed: do not navigate.
+    let saved;
     try {
-      const key = getExamDataKey(id);
-      const data = JSON.parse(localStorage.getItem(key) || "{}");
-      data.examState = examState;
-      localStorage.setItem(key, JSON.stringify(data));
+      saved = saveExamData(id, { ...current, examState });
     } catch {
-      // non-fatal: exam can still proceed with in-memory state
+      saved = false;
+    }
+    if (!saved) {
+      showToast(t("exam.start.persistFailed"), "error");
+      return;
     }
 
     // Set timer start — { remainingSeconds, savedAt } format used by useTimer
@@ -117,7 +143,7 @@ export default function ExamStart() {
   const rules = [
     { icon: "timer", text: t("exam.start.rule1") },
     { icon: "pen", text: t("exam.start.rule2") },
-    { icon: "bookmark", text: t("exam.start.rule3") },
+    { icon: "tag", text: t("exam.start.rule3") },
   ];
 
   return (

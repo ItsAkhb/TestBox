@@ -2,10 +2,12 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import Icon from "./Icon";
+import { useTranslation } from "../../i18n";
 
 export default function Modal({ open, onClose, title, subtitle, size = "md", children }) {
   const modalRef = useRef(null);
   const previousFocus = useRef(null);
+  const { t } = useTranslation();
   // Note: neither motion child declares an exit animation, so AnimatePresence
   // unmounts the overlay as soon as `open` flips false — an interrupted exit
   // can never leave a pointer-events: auto ghost blocking the page (the bug
@@ -95,7 +97,7 @@ export default function Modal({ open, onClose, title, subtitle, size = "md", chi
                   type="button"
                   className="modal-close"
                   onClick={onClose}
-                  aria-label="Close"
+                  aria-label={t("common.close")}
                 >
                   <Icon name="close" size={18} />
                 </button>

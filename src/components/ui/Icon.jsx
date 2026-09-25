@@ -83,6 +83,8 @@ import {
   Inbox,
   LogOut,
   Database,
+  Tag,
+  Monitor,
 } from "lucide-react";
 
 const iconMap = {
@@ -179,6 +181,8 @@ const iconMap = {
   inbox: Inbox,
   logout: LogOut,
   database: Database,
+  tag: Tag,
+  monitor: Monitor,
 };
 
 export default function Icon({

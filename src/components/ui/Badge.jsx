@@ -1,4 +1,4 @@
-export default function Badge({ variant = "primary", size = "md", dot, className = "", children }) {
+export default function Badge({ variant = "primary", size = "md", dot, className = "", children, ...rest }) {
   const classes = [
     "ui-badge",
     `ui-badge-${variant}`,
@@ -8,7 +8,7 @@ export default function Badge({ variant = "primary", size = "md", dot, className
   ].filter(Boolean).join(" ");
 
   return (
-    <span className={classes}>
+    <span className={classes} {...rest}>
       {dot && <span className="ui-badge-dot-indicator" aria-hidden="true" />}
       {children}
     </span>

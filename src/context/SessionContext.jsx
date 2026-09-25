@@ -6,8 +6,55 @@ import {
   useMemo,
   useState,
 } from "react";
+import { getExams, getExamData } from "../services/dataService";
+import { useAuth } from "./AuthContext";
+import {
+  activeExamSessionFromPersisted,
+  isExamAttemptActive,
+} from "../services/timerUi";
 
 const SessionContext = createContext(null);
+
+// Read the single persisted timer record for an exam (same key useTimer
+// owns). Pure projection — no second timer engine.
+function readRemainingSeconds(examId) {
+  try {
+    const raw = localStorage.getItem(`testbox-timer-${examId}`);
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    if (!Number.isFinite(saved?.remainingSeconds) || !saved?.savedAt) return null;
+    const elapsed = Math.floor((Date.now() - saved.savedAt) / 1000);
+    return Math.max(saved.remainingSeconds - elapsed, 0);
+  } catch {
+    return null;
+  }
+}
+
+// Boot-time hydrate: restore the TopBar pill from persisted examState +
+// timer so a reload (SessionContext starts null) still shows the active
+// normal-exam session. Display only — Exam owns the real useTimer engine.
+function hydrateActiveExamSession() {
+  try {
+    const exams = getExams();
+    if (!Array.isArray(exams)) return null;
+    for (const exam of exams) {
+      if (exam?.type !== "exam") continue;
+      const examData = getExamData(exam.id);
+      if (!isExamAttemptActive(examData)) continue;
+      const remainingSeconds = readRemainingSeconds(exam.id);
+      const session = activeExamSessionFromPersisted({
+        examId: exam.id,
+        label: exam.name || "",
+        examData,
+        remainingSeconds: remainingSeconds ?? 0,
+      });
+      if (session) return session;
+    }
+  } catch {
+    // unreadable storage — Exam page will re-register on next mount
+  }
+  return null;
+}
 
 /**
  * Shared "active study session" state so the TopBar can show the exam
@@ -22,14 +69,37 @@ const SessionContext = createContext(null);
  * cleared when the exam page unmounts.
  */
 export function SessionProvider({ children }) {
-  const [session, setSession] = useState(null);
+  const { authState, user } = useAuth();
+  // Hydrate once from persisted examState + timer (reload resilience).
+  const [session, setSession] = useState(() => hydrateActiveExamSession());
+  // Auth identity the boot hydrate ran under (null until auth settles).
+  const [hydratedAuthKey, setHydratedAuthKey] = useState(null);
   const [now, setNow] = useState(() => Date.now());
+  // Focus-timer dock state: true while the in-page exam timer is visible.
+  // The Exam page drives this via IntersectionObserver; the TopBar uses it
+  // to decide when its (display-only) pill should appear. Display only —
+  // never a second timer engine.
+  const [focusTimerVisible, setFocusTimerVisible] = useState(true);
 
   const updateSession = useCallback((next) => {
     setSession((current) =>
       typeof next === "function" ? next(current) : next
     );
   }, []);
+
+  // Boot hydrate can race setStorageUser(user.id): first pass may read
+  // the anonymous prefix and miss a user-namespaced active attempt.
+  // Once auth settles, re-read once if we still have no session.
+  // Adjust during render (React's alternative to setState-in-effect) —
+  // never overwrites a live Exam-registered session.
+  const authKey = authState === "unknown" ? null : (user?.id ?? "anonymous");
+  if (authKey !== null && hydratedAuthKey !== authKey) {
+    if (session === null) {
+      const rehydrated = hydrateActiveExamSession();
+      if (rehydrated) setSession(rehydrated);
+    }
+    setHydratedAuthKey(authKey);
+  }
 
   // 1s ticker only while an exam countdown is displayed.
   const examRunning = session?.kind === "exam";
@@ -42,21 +112,28 @@ export function SessionProvider({ children }) {
   // Countdown display derives from the wall clock each render; an
   // expired session simply renders as null (real finish flow stays
   // owned by the Exam page's own timer engine).
-  const value = useMemo(() => {
-    if (!session) return { session: null, updateSession };
+  const sessionValue = useMemo(() => {
+    if (!session) return null;
     if (session.kind === "exam") {
       const remainingMs = session.endsAt - now;
-      if (remainingMs <= 0) return { session: null, updateSession };
+      if (remainingMs <= 0) return null;
       return {
-        session: {
-          ...session,
-          remainingSeconds: Math.ceil(remainingMs / 1000),
-        },
-        updateSession,
+        ...session,
+        remainingSeconds: Math.ceil(remainingMs / 1000),
       };
     }
-    return { session, updateSession };
-  }, [session, now, updateSession]);
+    return session;
+  }, [session, now]);
+
+  const value = useMemo(
+    () => ({
+      session: sessionValue,
+      updateSession,
+      focusTimerVisible,
+      setFocusTimerVisible,
+    }),
+    [sessionValue, updateSession, focusTimerVisible]
+  );
 
   return (
     <SessionContext.Provider value={value}>

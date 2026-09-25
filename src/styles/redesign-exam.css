@@ -102,11 +102,6 @@
   border-color: var(--divider);
 }
 
-.question-row.question-marked {
-  background: var(--warning-soft);
-  border-radius: var(--radius-md);
-}
-
 .question-number {
   width: 44px;
 }
@@ -127,6 +122,10 @@
 .answer-button {
   width: 38px;
   height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
 
   border: 1px solid var(--border);
   border-radius: 50%;
@@ -200,6 +199,10 @@
 .result-button {
   width: 32px;
   height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
   border-radius: 50%;
   font-size: var(--text-sm);
   background: var(--surface);
@@ -228,14 +231,9 @@
   color: var(--danger-soft);
 }
 
-.mark-button {
-  width: 34px;
-  height: 34px;
-  opacity: 0.35;
-}
-
-.mark-button.marked {
-  opacity: 1;
+.tag-button {
+  min-height: 34px;
+  max-width: 130px;
 }
 
 /* ---------- Practice stopwatch cluster ----------
@@ -277,6 +275,9 @@
 .question-row.exam-mode-row .answer-choice {
   width: 34px;
   height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  aspect-ratio: 1 / 1;
   font-size: var(--text-xs);
 }
 
@@ -294,8 +295,7 @@
 
 /* ---------- Note ---------- */
 
-.exam-note,
-.note-section {
+.exam-note {
   margin: 26px auto 40px;
   padding: 18px;
 
@@ -305,14 +305,12 @@
   box-shadow: none;
 }
 
-.note-header h2,
-.note-section h2 {
+.note-header h2 {
   font-size: var(--text-md);
   font-weight: 700;
 }
 
-.exam-note textarea,
-.note-section textarea {
+.exam-note textarea {
   min-height: 110px;
   padding: 12px;
 
@@ -324,8 +322,7 @@
   line-height: var(--leading-relaxed);
 }
 
-.exam-note textarea:focus,
-.note-section textarea:focus {
+.exam-note textarea:focus {
   border-color: var(--primary);
   background: var(--surface);
 }
@@ -450,6 +447,7 @@
 .results-review-status {
   font-size: var(--text-2xs);
   font-weight: 700;
+  line-height: 1;
 }
 
 .results-review-correct {
@@ -628,6 +626,20 @@
   font-weight: 600;
 }
 
+.focusbar-count-pct {
+  margin-inline-start: 4px;
+  padding: 1px 6px;
+
+  border-radius: var(--radius-full);
+
+  background: var(--primary-ghost);
+  color: var(--primary);
+
+  font-size: var(--text-2xs);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 .focusbar-nav {
   position: relative;
 
@@ -656,19 +668,6 @@
   border-color: var(--primary-border);
   color: var(--primary);
   background: var(--primary-soft);
-}
-
-.focusbar-nav-dot {
-  position: absolute;
-  top: 7px;
-  inset-inline-end: 7px;
-
-  width: 8px;
-  height: 8px;
-
-  border-radius: 50%;
-  background: var(--warning);
-  box-shadow: 0 0 0 2px var(--surface);
 }
 
 .focusbar-finish {
@@ -782,14 +781,6 @@ body[data-exam-mode="exam"] .focus-timer.is-critical .focus-timer-value {
   color: #F87171;
 }
 
-body[data-exam-mode="exam"] .focusbar-nav-dot {
-  box-shadow: 0 0 0 2px #221A14;
-}
-
-:root[data-theme="dark"] body[data-exam-mode="exam"] .focusbar-nav-dot {
-  box-shadow: 0 0 0 2px #060605;
-}
-
 body[data-exam-mode="exam"] .focusbar-progress {
   background: rgb(255 255 255 / 12%);
 }
@@ -813,7 +804,9 @@ body[data-exam-mode="exam"] .focusbar-progress {
   transition:
     border-color var(--transition),
     background var(--transition),
-    color var(--transition);
+    color var(--transition),
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 .focus-timer-icon {
@@ -919,19 +912,29 @@ body[data-exam-mode="exam"] .focusbar-progress {
   cursor: default;
 }
 
-.mark-button,
+.question-row.is-unresolved {
+  background: var(--warning-soft);
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+.question-row.is-answered-live {
+  position: relative;
+}
+
+.question-row.is-answered-live::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
 .result-button {
   display: inline-grid;
   place-items: center;
-}
-
-.mark-button.marked {
-  color: var(--warning);
-}
-
-.marked-counter-icon {
-  display: flex;
-  color: var(--warning);
 }
 
 .note-header {
@@ -969,6 +972,30 @@ body[data-exam-mode="exam"] .focusbar-progress {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   margin-inline-end: 4px;
+}
+
+.navigator-summary-pct strong {
+  color: var(--primary);
+}
+
+/* Progress bar mirrors the summary text — decorative for AT. */
+.navigator-progress {
+  height: 6px;
+
+  margin-bottom: 16px;
+
+  overflow: hidden;
+
+  border-radius: var(--radius-full);
+  background: var(--background-alt);
+}
+
+.navigator-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: inline-size var(--transition);
 }
 
 .navigator-filters {
@@ -1050,21 +1077,6 @@ body[data-exam-mode="exam"] .focusbar-progress {
   color: var(--primary);
 }
 
-.navigator-cell.is-marked {
-  border-color: var(--warning-border);
-  box-shadow: inset 0 -3px 0 var(--warning);
-}
-
-.navigator-cell-flag {
-  position: absolute;
-  top: 5px;
-  inset-inline-end: 5px;
-
-  display: flex;
-
-  color: var(--warning);
-}
-
 .navigator-empty {
   display: flex;
   align-items: center;
@@ -1119,12 +1131,6 @@ body[data-exam-mode="exam"] .focusbar-progress {
   background: var(--warning-soft);
   border-color: var(--warning-border);
   color: var(--warning);
-}
-
-.finish-summary-row.is-marked {
-  background: var(--study-soft);
-  border-color: var(--warm-border);
-  color: var(--warm-hover);
 }
 
 /* ---------- Exam briefing (start) sheet ---------- */
@@ -1196,6 +1202,10 @@ body[data-exam-mode="exam"] .focusbar-progress {
 .brief-state-dot {
   width: 7px;
   height: 7px;
+  min-width: 7px;
+  min-height: 7px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
   border-radius: 50%;
   background: currentColor;
 }
@@ -1461,6 +1471,7 @@ body[data-exam-mode="exam"] .focusbar-progress {
 .breakdown-correct { background: var(--success); }
 .breakdown-wrong { background: var(--danger); }
 .breakdown-unanswered { background: var(--muted); opacity: 0.45; }
+.breakdown-unresolved { background: var(--warning); opacity: 0.75; }
 .breakdown-ungraded { background: var(--warning); }
 
 .breakdown-legend {
@@ -1490,6 +1501,7 @@ body[data-exam-mode="exam"] .focusbar-progress {
 .legend-correct { background: var(--success); }
 .legend-wrong { background: var(--danger); }
 .legend-unanswered { background: var(--muted); opacity: 0.5; }
+.legend-unresolved { background: var(--warning); opacity: 0.75; }
 .legend-ungraded { background: var(--warning); }
 
 .legend-label {
@@ -1519,19 +1531,6 @@ body[data-exam-mode="exam"] .focusbar-progress {
 
 .results-review-item {
   position: relative;
-}
-
-.results-review-item.is-marked::after {
-  content: "";
-  position: absolute;
-  top: 6px;
-  inset-inline-end: 6px;
-
-  width: 6px;
-  height: 6px;
-
-  border-radius: 50%;
-  background: var(--warning);
 }
 
 .results-time-item {
@@ -1630,6 +1629,121 @@ body[data-exam-mode="exam"] .focusbar-progress {
 
   .brief-stats {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---------- Mobile: thinner question rows (wins over pages.css) ---------- */
+
+.exam-empty-sheet {
+  min-height: 280px;
+}
+
+@media (max-width: 600px) {
+  .question-row {
+    min-height: 0;
+    padding: 6px 4px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .question-number {
+    width: 34px;
+  }
+
+  .answer-choice,
+  .answer-button {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
+    font-size: 12px;
+  }
+
+  /* Keep actions on one shared trailing line — not a forced full-width row. */
+  .question-row .question-result-actions {
+    width: auto;
+    margin-top: 4px;
+    margin-inline-start: auto;
+    justify-content: flex-end;
+    gap: 5px;
+  }
+
+  .question-row .question-actions {
+    width: auto;
+    margin-top: 4px;
+    flex-shrink: 0;
+  }
+
+  .question-row .result-button {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    min-height: 30px;
+  }
+
+  .question-row .tag-button {
+    min-height: 30px;
+    max-width: 110px;
+    padding: 2px 6px;
+  }
+
+  .question-row .correct-answer-choice {
+    width: 26px;
+    height: 26px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Practice trailing tower: compact buttons (pages.css used 40px).
+     Match its :not() specificity so these actually win. */
+  .question-row:not(.exam-mode-row):not(.is-review) .result-button,
+  .question-row:not(.exam-mode-row):not(.is-review) .tag-button {
+    width: 34px;
+    height: 34px;
+    max-width: 34px;
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  .question-row:not(.exam-mode-row):not(.is-review) .answer-choice {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    max-width: 32px;
+  }
+
+  .question-row:not(.exam-mode-row):not(.is-review) .correct-answer-choice {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+    max-width: 28px;
+    font-size: 10px;
+  }
+
+  /* Review rows keep flex layout — also compact the answer circles. */
+  .question-row.is-review .answer-choice,
+  .question-row.is-review .answer-button {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  .question-row.is-review .correct-answer-choice {
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    min-height: 26px;
+    font-size: 10px;
+  }
+
+  .question-row.is-review .result-button {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    min-height: 30px;
   }
 }
 

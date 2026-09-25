@@ -5,14 +5,16 @@ import {
 } from "react-router-dom";
 
 import { supabase } from "../services/supabaseClient";
+import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "../i18n";
-import LogoMark from "../components/ui/LogoMark";
+import Icon from "../components/ui/Icon";
 
 
 
 function Login() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { signInWithGoogle, googleLoading, googleError } = useAuth();
 
 
 
@@ -30,6 +32,10 @@ function Login() {
   const [error, setError] =
     useState("");
 
+  const [showPassword, setShowPassword] =
+    useState(false);
+
+
 
 
 
@@ -46,6 +52,7 @@ function Login() {
     setError("");
 
     setLoading(true);
+
 
 
 
@@ -73,7 +80,9 @@ function Login() {
 
 
 
+
     setLoading(false);
+
 
 
 
@@ -107,9 +116,10 @@ function Login() {
 
   }
 
-
-
-
+  async function handleGoogleLogin() {
+    setError("");
+    await signInWithGoogle();
+  }
 
 
 
@@ -130,9 +140,13 @@ function Login() {
 
 
 
+
       <aside className="auth-art" aria-hidden="true">
-        <LogoMark size={72} />
-        <span className="auth-art-brand">TestBox</span>
+        <img
+          className="auth-art-logo"
+          src={`${import.meta.env.BASE_URL}brand/testbox-primary-lockup-dark.svg`}
+          alt=""
+        />
       </aside>
 
       <div className="auth-card">
@@ -143,8 +157,8 @@ function Login() {
 
 
 
-        <div className="auth-title">
 
+        <div className="auth-title">
 
 
 
@@ -161,10 +175,10 @@ function Login() {
 
 
 
-
           <p>
             {t("auth.login.subtitle")}
           </p>
+
 
 
 
@@ -184,8 +198,26 @@ function Login() {
 
 
 
+        <button
+          type="button"
+          className="primary-button auth-google"
+          onClick={handleGoogleLogin}
+          disabled={googleLoading || loading}
+        >
+          {googleLoading
+            ? t("auth.google.loading")
+            : t("auth.google.continue")}
+        </button>
 
+        {googleError && (
+          <div className="auth-message auth-error" role="alert">
+            {t(googleError)}
+          </div>
+        )}
 
+        <div className="auth-divider" aria-hidden="true">
+          <span>{t("auth.orEmail")}</span>
+        </div>
 
         <form
 
@@ -229,11 +261,13 @@ function Login() {
 
             autoComplete="email"
 
+            aria-invalid={error ? "true" : undefined}
+
+            aria-describedby={error ? "login-error" : undefined}
+
             required
 
           />
-
-
 
 
 
@@ -255,31 +289,77 @@ function Login() {
 
 
 
+          {showPassword ? (
+            <input
 
+              type="text"
 
-          <input
+              value={password}
 
-            type="password"
+              onChange={(event) =>
 
-            value={password}
+                setPassword(
 
-            onChange={(event) =>
+                  event.target.value
 
-              setPassword(
+                )
 
-                event.target.value
+              }
 
-              )
+              autoComplete="current-password"
 
-            }
+              aria-invalid={error ? "true" : undefined}
 
-            autoComplete="current-password"
+              aria-describedby={error ? "login-error" : undefined}
 
-            required
+              required
 
-          />
+            />
+          ) : (
+            <input
 
+              type="password"
 
+              value={password}
+
+              onChange={(event) =>
+
+                setPassword(
+
+                  event.target.value
+
+                )
+
+              }
+
+              autoComplete="current-password"
+
+              aria-invalid={error ? "true" : undefined}
+
+              aria-describedby={error ? "login-error" : undefined}
+
+              required
+
+            />
+          )}
+
+          <button
+
+            type="button"
+
+            className="auth-password-toggle"
+
+            onClick={() => setShowPassword((prev) => !prev)}
+
+            aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+
+            aria-pressed={showPassword}
+
+          >
+
+            <Icon name={showPassword ? "eyeOff" : "eye"} size={16} />
+
+          </button>
 
 
 
@@ -298,10 +378,14 @@ function Login() {
 
             <div
 
+              id="login-error"
+
               className="
                 auth-message
                 auth-error
               "
+
+              role="alert"
 
             >
 
@@ -314,12 +398,6 @@ function Login() {
 
 
           )}
-
-
-
-
-
-
 
 
 
@@ -345,9 +423,12 @@ function Login() {
 
 
 
+
+
             {loading
               ? t("auth.login.loading")
               : t("auth.login.submit")}
+
 
 
 
@@ -360,10 +441,7 @@ function Login() {
 
 
 
-
-
         </form>
-
 
 
 
@@ -392,9 +470,9 @@ function Login() {
 
 
 
+
+
           {" "}
-
-
 
 
 
@@ -411,14 +489,17 @@ function Login() {
 
 
 
+
+
+
             {t("auth.createAccount")}
 
 
 
 
+
+
           </Link>
-
-
 
 
 
@@ -429,15 +510,7 @@ function Login() {
 
 
 
-
-
-
-
       </div>
-
-
-
-
 
 
 
@@ -448,7 +521,6 @@ function Login() {
   );
 
 }
-
 
 
 

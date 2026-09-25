@@ -55,10 +55,12 @@ export default function useTimer(examId, initialSeconds, onTimeUp) {
   }, [onTimeUp]);
 
   const firedRef = useRef(false);
-  const timerLiveRef = useRef(!!examId);
+  // Must hold the examId string (not !!examId) — persist/clear/read all
+  // key off testbox-timer-${examId}. A boolean true wrote testbox-timer-true.
+  const timerLiveRef = useRef(examId || null);
 
   useEffect(() => {
-    timerLiveRef.current = !!examId;
+    timerLiveRef.current = examId || null;
   }, [examId]);
 
   // Countdown interval — runs while remaining > 0

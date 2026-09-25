@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -11,7 +12,8 @@ import {
   getExams,
   getExamData,
 } from "../services/dataService";
-import { getTodayActivity, getStreak, getActivityForDateRange } from "../services/activityTracker";
+import { isExamAttemptActive } from "../services/timerUi";
+import { getTodayActivity, getStreak, getActivityForDateRange, getDayReport } from "../services/activityTracker";
 import { toLocalDateString } from "../utils/date";
 
 // 3600s → "1:00:00", 125s → "2:05"; hours grow unbounded
@@ -27,26 +29,10 @@ import MiniCalendar from "../components/calendar/MiniCalendar";
 import Icon from "../components/ui/Icon";
 import CountUp from "../components/ui/CountUp";
 import EmptyArt from "../components/ui/EmptyArt";
+import EmptyState from "../components/ui/EmptyState";
+import PageHeader from "../components/ui/PageHeader";
+import Badge from "../components/ui/Badge";
 import { useTranslation } from "../i18n";
-
-function getMarkedCount(exams) {
-  let count = 0;
-
-  exams.forEach((exam) => {
-    const data = getExamData(exam.id);
-
-    if (
-      !data ||
-      !Array.isArray(data.marked)
-    ) {
-      return;
-    }
-
-    count += data.marked.length;
-  });
-
-  return count;
-}
 
 function readHomeData() {
   const folders = getFolders();
@@ -126,12 +112,12 @@ function Home() {
 
   const [search, setSearch] = useState("");
 
-  const markedCount = useMemo(() => {
-    return getMarkedCount(exams);
-  }, [exams]);
-
-  const todayActivity = useMemo(() => {
-    return getTodayActivity();
+  const { todayActivity, dayReport } = useMemo(() => {
+    return {
+      todayActivity: getTodayActivity(),
+      // Same source as Calendar DayDetail — overall + per-subject accuracy
+      dayReport: getDayReport(toLocalDateString(new Date())),
+    };
   }, [data]);
 
   const streak = useMemo(() => {
@@ -163,7 +149,7 @@ function Home() {
     for (const exam of exams) {
       try {
         const ed = getExamData(exam.id);
-        if (ed?.examState?.status === "in_progress") return exam;
+        if (isExamAttemptActive(ed)) return exam;
       } catch {
         // ignore unreadable records
       }
@@ -245,23 +231,78 @@ function Home() {
     searchResults.folders.length > 0 ||
     searchResults.exams.length > 0;
 
+  const searchResultCount =
+    searchResults.folders.length +
+    searchResults.exams.length;
+
+  const searchInputRef = useRef(null);
+  const resultsRef = useRef(null);
+
+  const showSearchResults = Boolean(searchText);
+
+  function getResultLinks() {
+    const container = resultsRef.current;
+    if (!container) return [];
+    return Array.from(
+      container.querySelectorAll("a.search-result")
+    );
+  }
+
   function clearSearch() {
     setSearch("");
   }
 
+  function handleSearchKeyDown(event) {
+    if (event.key === "ArrowDown") {
+      const links = getResultLinks();
+      if (links.length > 0) {
+        event.preventDefault();
+        links[0].focus();
+      }
+    } else if (event.key === "Escape" && search) {
+      event.preventDefault();
+      clearSearch();
+    }
+  }
+
+  function handleResultsKeyDown(event) {
+    const links = getResultLinks();
+    const index = links.indexOf(document.activeElement);
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (index >= 0 && index < links.length - 1) {
+        links[index + 1].focus();
+      } else if (index === -1 && links.length > 0) {
+        links[0].focus();
+      }
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (index > 0) {
+        links[index - 1].focus();
+      } else {
+        searchInputRef.current?.focus();
+      }
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      if (links.length > 0) links[0].focus();
+    } else if (event.key === "End") {
+      event.preventDefault();
+      if (links.length > 0) links[links.length - 1].focus();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      clearSearch();
+    }
+  }
+
   return (
     <>
-      <header className="home-heading">
-
-        <div>
-          <h1>{t("home.title")}</h1>
-
-          <p>
-            {t("home.subtitle")}
-          </p>
-        </div>
-
-      </header>
+      <PageHeader
+        className="home-heading"
+        title={t("home.title")}
+        subtitle={t("home.subtitle")}
+      />
 
       <section className="home-search">
 
@@ -272,13 +313,17 @@ function Home() {
           </span>
 
           <input
+            ref={searchInputRef}
             type="search"
             value={search}
             onChange={(event) =>
               setSearch(event.target.value)
             }
+            onKeyDown={handleSearchKeyDown}
             placeholder={t("home.search.placeholder")}
             aria-label={t("home.search.placeholder")}
+            aria-controls="home-search-results"
+            aria-expanded={showSearchResults}
           />
 
           {/* Always rendered so the field never shifts when it appears */}
@@ -296,8 +341,24 @@ function Home() {
 
         </div>
 
-        {searchText && (
-          <div className="search-results">
+        {showSearchResults && (
+          <p className="sr-only" role="status" aria-live="polite">
+            {searchResultCount > 0
+              ? t("home.search.resultsAnnounce", {
+                  count: searchResultCount,
+                  query: search,
+                })
+              : `${t("home.search.noResults")} «${search}» ${t("home.search.found")}`}
+          </p>
+        )}
+
+        {showSearchResults && (
+          <div
+            ref={resultsRef}
+            id="home-search-results"
+            className="search-results"
+            onKeyDown={handleResultsKeyDown}
+          >
 
             {!hasSearchResults ? (
 
@@ -443,7 +504,14 @@ function Home() {
 
           <div className="today-meta">
             <span className="today-meta-item">
-              <strong className="num">{todayActivity && todayActivity.solved > 0 ? Math.round((todayActivity.correct / todayActivity.solved) * 100) : 0}%</strong>
+              <strong className="num">
+                {dayReport?.overall
+                  ? dayReport.overall.accuracy
+                  : todayActivity && todayActivity.solved > 0
+                    ? Math.round((todayActivity.correct / todayActivity.solved) * 100)
+                    : 0}
+                %
+              </strong>
               <span className="meta-lb">{t("home.today.accuracy")}</span>
             </span>
             <span className="today-meta-dot" aria-hidden="true">·</span>
@@ -462,17 +530,34 @@ function Home() {
               <strong className="num">{streak}</strong>
               <span className="meta-lb">{t("home.streak.title")}</span>
             </span>
-            <span className="today-meta-dot" aria-hidden="true">·</span>
-            <span className="today-meta-item">
-              <strong className="num">{folders.length}</strong>
-              <span className="meta-lb">{t("home.stats.folders")}</span>
-            </span>
-            <span className="today-meta-dot" aria-hidden="true">·</span>
-            <span className="today-meta-item">
-              <strong className="num">{exams.length}</strong>
-              <span className="meta-lb">{t("home.stats.exams")}</span>
-            </span>
           </div>
+
+          {dayReport && dayReport.subjects.length > 0 && (
+            <div className="today-subjects">
+              <p className="today-subjects-title">{t("home.today.bySubject")}</p>
+              <div className="today-subjects-list">
+                {dayReport.subjects.map((subject) => (
+                  <div
+                    key={subject.subjectId ?? "none"}
+                    className="today-subject-row"
+                  >
+                    <span className="today-subject-name">
+                      {subject.color && (
+                        <span
+                          className="filter-dot"
+                          style={{ backgroundColor: subject.color }}
+                        />
+                      )}
+                      {subject.subjectName || t("subjects.uncategorized")}
+                    </span>
+                    <span className="today-subject-acc num">
+                      {subject.solved > 0 ? `${subject.accuracy}%` : "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="today-week" role="img" aria-label={t("home.week.title")}>
             {weekActivity.map((d) => {
@@ -497,10 +582,13 @@ function Home() {
       {/* ---- Resume an in-progress exam ---- */}
       {resumableExam && (
         <Link to={`/exam/${resumableExam.id}`} className="resume-cta">
-          <span className="resume-cta-badge">
-            <span className="brief-state-dot" aria-hidden="true" />
+          <Badge
+            dot
+            variant="warning"
+            className="resume-cta-badge"
+          >
             {t("home.resume.badge")}
-          </span>
+          </Badge>
           <span className="resume-cta-name">{resumableExam.name}</span>
           <span className="resume-cta-action">
             {t("exam.start.resume")}
@@ -513,20 +601,36 @@ function Home() {
       <section className="continue-section">
         <div className="section-head">
           <h2>{t("home.recent.title")}</h2>
+          <span className="section-head-meta">
+            <span className="library-meta-item">
+              <Icon name="folder" size={14} />
+              <strong className="num">{folders.length}</strong>
+              <span className="meta-lb">{t("home.stats.folders")}</span>
+            </span>
+            <span className="today-meta-dot" aria-hidden="true">·</span>
+            <span className="library-meta-item">
+              <Icon name="fileText" size={14} />
+              <strong className="num">{exams.length}</strong>
+              <span className="meta-lb">{t("home.stats.exams")}</span>
+            </span>
+          </span>
           <Link to="/folders" className="section-link">
             {t("home.recent.viewAll")}
           </Link>
         </div>
 
         {recentExams.length === 0 ? (
-          <div className="empty-state">
-            <EmptyArt variant="sheets" />
-            <h3>{t("home.empty.title")}</h3>
-            <p>{t("home.empty.description")}</p>
-            <Link to="/folders" className="primary-button">
-              {t("home.empty.action")}
-            </Link>
-          </div>
+          <EmptyState
+            icon={<EmptyArt variant="sheets" />}
+            title={t("home.empty.title")}
+            description={t("home.empty.description")}
+            action={{
+              label: t("home.empty.action"),
+              onClick: () => {
+                window.location.hash = "#/folders";
+              },
+            }}
+          />
         ) : (
           <div className="continue-list rise-list">
             {recentExams.map((exam) => {

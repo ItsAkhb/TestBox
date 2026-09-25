@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useTranslation } from "../i18n";
 import { getExams, getExamData, saveExamData } from "../services/dataService";
-import { autoScore, getGrade, getQuestionNumbers } from "../services/scoring";
+import { autoScore, scoreManualResults, getGrade, getQuestionNumbers } from "../services/scoring";
 import Icon from "../components/ui/Icon";
 import CountUp from "../components/ui/CountUp";
 import ScoreRing from "../components/exam/ScoreRing";
@@ -31,42 +31,32 @@ export default function ExamResults() {
 
     const answerKey = examData.answerKey || {};
     const hasAnswerKey = Object.keys(answerKey).length > 0;
+    const unresolvedList = Array.isArray(examData.unresolved)
+      ? examData.unresolved
+      : [];
+    const negativeMarking = exam.negativeMarking !== false;
 
     // Authoritative total = the exam's own question numbers, never the key size
     const questionNumbers = getQuestionNumbers(exam);
 
     if (hasAnswerKey) {
       // Auto-scoring: key-covered questions are graded; the rest are ungraded.
-      // Persisted results carry the unresolved distinction (a no-answer
-      // question the user explicitly marked unresolved).
-      return autoScore(examData.answers || {}, answerKey, exam.negativeMarking !== false, {
+      // results + unresolved list both feed the unresolved distinction
+      // (reload before finish, practice marks, legacy data without markers).
+      return autoScore(examData.answers || {}, answerKey, negativeMarking, {
         questionNumbers,
         results: examData.results || {},
+        unresolved: unresolvedList,
       });
     }
 
-    // Fallback: use manual results if no answer key
-    const manualResults = examData.results || {};
-    let correct = 0;
-    let wrong = 0;
-    let unanswered = 0;
-
-    const details = {};
-
-    for (const qNum of questionNumbers) {
-      const result = manualResults[qNum];
-      if (result === "correct") { correct++; details[qNum] = "correct"; }
-      else if (result === "wrong") { wrong++; details[qNum] = "wrong"; }
-      else { unanswered++; details[qNum] = "unanswered"; }
-    }
-
-    const questionCount = questionNumbers.length;
-
-    const percentage = exam.negativeMarking !== false
-      ? Math.max(0, Math.round(((correct * 3 - wrong) / (questionCount * 3)) * 100 * 10) / 10)
-      : questionCount > 0 ? Math.round((correct / questionCount) * 100 * 10) / 10 : 0;
-
-    return { correct, wrong, unanswered, unresolved: 0, ungraded: 0, graded: questionCount, totalQuestions: questionCount, percentage, details };
+    // No key: manual results — same buckets, unresolved never drops from total
+    return scoreManualResults(
+      examData.results || {},
+      unresolvedList,
+      questionNumbers,
+      negativeMarking
+    );
   }, [exam, examData]);
 
   if (!exam || !results) {
@@ -98,10 +88,6 @@ export default function ExamResults() {
   const gradedCount = results.correct + results.wrong;
   const accuracy =
     gradedCount > 0 ? Math.round((results.correct / gradedCount) * 1000) / 10 : 0;
-
-  const markedSet = new Set(
-    Array.isArray(examData?.marked) ? examData.marked.map(Number) : []
-  );
 
   function formatDuration(totalSeconds) {
     const m = Math.floor(totalSeconds / 60);
@@ -142,14 +128,10 @@ export default function ExamResults() {
   const filters = [
     { id: "all", label: t("exam.workspace.filterAll"), count: results.totalQuestions },
     ...breakdown.map((b) => ({ id: b.id, label: b.label, count: b.value })),
-    ...(markedSet.size > 0
-      ? [{ id: "marked", label: t("exam.markedCount"), count: markedSet.size }]
-      : []),
   ];
 
-  const reviewEntries = Object.entries(results.details).filter(([qNum, status]) => {
+  const reviewEntries = Object.entries(results.details).filter(([, status]) => {
     if (reviewFilter === "all") return true;
-    if (reviewFilter === "marked") return markedSet.has(Number(qNum));
     return status === reviewFilter;
   });
 
@@ -276,7 +258,7 @@ export default function ExamResults() {
             <Link
               key={qNum}
               to={`/exam/${id}?question=${qNum}&review=1`}
-              className={`results-review-item results-review-${status} ${markedSet.has(Number(qNum)) ? "is-marked" : ""}`}
+              className={`results-review-item results-review-${status}`}
             >
               <span className="results-review-number">{qNum}</span>
               <span className="results-review-status">

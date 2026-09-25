@@ -47,9 +47,14 @@ import {
   hasPendingLocalChanges,
   clearDirtySection,
   setDirtySuppression,
+  getSuppressedOpCount,
+  beginCloudWrite,
+  endCloudWrite,
   getDeletedIds,
   generateId,
   markTombstonesPushed,
+  applyDeferredDirtyMarks,
+  atomicMutation,
 } from "./storage.js";
 
 export {
@@ -101,7 +106,18 @@ export {
   hasPendingLocalChanges,
   clearDirtySection,
   setDirtySuppression,
+  getSuppressedOpCount,
+  beginCloudWrite,
+  endCloudWrite,
   getDeletedIds,
   generateId,
   markTombstonesPushed,
+  applyDeferredDirtyMarks,
+  atomicMutation,
 };
+
+export {
+  migrateLocalStorageToIDB,
+  checkIDBHealth,
+  idbAtomicMutate,
+} from "./idb.js";

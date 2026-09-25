@@ -13,6 +13,8 @@ import Icon from "../components/ui/Icon";
 import Modal from "../components/ui/Modal";
 import PageHeader from "../components/ui/PageHeader";
 import EmptyArt from "../components/ui/EmptyArt";
+import EmptyState from "../components/ui/EmptyState";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
 
 const COLORS = [
   "#2563eb", "#059669", "#d97706", "#dc2626",
@@ -30,6 +32,7 @@ function Subjects() {
   const [editingSubject, setEditingSubject] = useState(null);
   const [subjectName, setSubjectName] = useState("");
   const [subjectColor, setSubjectColor] = useState(COLORS[0]);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   function refresh() {
     setSubjects(getSubjects());
@@ -105,10 +108,15 @@ function Subjects() {
         ? t("subjects.deleteConfirmWithFolders", { count })
         : t("subjects.deleteConfirm");
 
-    const ok = window.confirm(message);
-    if (!ok) return;
+    setDeleteTarget({ subject, message });
+  }
 
-    const deleted = deleteSubject(subject.id);
+  function confirmDelete() {
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    if (!target) return;
+
+    const deleted = deleteSubject(target.subject.id);
 
     if (!deleted) {
       showToast(t("subjects.deleteFailed"), "error");
@@ -134,15 +142,15 @@ function Subjects() {
       />
 
       {subjects.length === 0 ? (
-        <div className="empty-state">
-          <EmptyArt variant="sheets" />
-          <h3>{t("subjects.empty")}</h3>
-          <p>{t("subjects.emptyDescription")}</p>
-          <button className="primary-button" onClick={handleOpenCreate}>
-            <Icon name="plus" size={15} />
-            {t("subjects.create")}
-          </button>
-        </div>
+        <EmptyState
+          icon={<EmptyArt variant="sheets" />}
+          title={t("subjects.empty")}
+          description={t("subjects.emptyDescription")}
+          action={{
+            label: t("subjects.create"),
+            onClick: handleOpenCreate,
+          }}
+        />
       ) : (
         <div className="subjects-grid rise-list">
           {subjects.map((subject) => (
@@ -217,6 +225,16 @@ function Subjects() {
           </button>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+        title={t("common.delete")}
+        message={deleteTarget?.message || ""}
+        confirmLabel={t("common.delete")}
+        cancelLabel={t("common.cancel")}
+      />
     </section>
   );
 }

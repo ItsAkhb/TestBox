@@ -1,17 +1,20 @@
 import { createContext, useCallback, useContext, useState } from "react";
 
+import { getSettings, saveSettings } from "../services/dataService";
+
 const SettingsContext = createContext(null);
 
 const DEFAULT_SETTINGS = {
   language: "fa",
   weatherLocation: { lat: 35.6892, lon: 51.3890, name: "Tehran" },
+  defaultNegativeMarking: true,
+  defaultExamType: "practice",
 };
 
 export function SettingsProvider({ children }) {
   const [settings, setSettingsState] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem("testbox-settings") || "null");
-      return { ...DEFAULT_SETTINGS, ...saved };
+      return { ...DEFAULT_SETTINGS, ...getSettings() };
     } catch {
       return DEFAULT_SETTINGS;
     }
@@ -21,7 +24,7 @@ export function SettingsProvider({ children }) {
     setSettingsState((prev) => {
       const next = { ...prev, ...updates };
       try {
-        localStorage.setItem("testbox-settings", JSON.stringify(next));
+        saveSettings(next);
       } catch {
         // storage unavailable — settings stay in-memory
       }

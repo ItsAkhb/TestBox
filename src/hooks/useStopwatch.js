@@ -152,7 +152,10 @@ export default function useStopwatch(examId, { onTick } = {}) {
           savedAt: Date.now(),
         };
         recordRef.current = stopped;
-        writeRecord(liveRef.current, stopped);
+        // Write under the real exam id — never under the boolean flag
+        // (the old code used liveRef.current which is true → key
+        // "testbox-stopwatch-true" and lost every session on unmount).
+        writeRecord(examId, stopped);
         try {
           onTickRef.current?.(remainder);
         } catch {
@@ -160,7 +163,7 @@ export default function useStopwatch(examId, { onTick } = {}) {
         }
       }
     };
-  }, []);
+  }, [examId]);
 
   const start = useCallback(() => {
     const current = recordRef.current;

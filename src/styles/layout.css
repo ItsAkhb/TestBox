@@ -269,6 +269,10 @@ html[dir="rtl"] .sidebar {
 .sync-dot {
   width: 7px;
   height: 7px;
+  min-width: 7px;
+  min-height: 7px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
   border-radius: 50%;
   background: var(--muted);
   transition: background var(--transition);
@@ -296,8 +300,44 @@ html[dir="rtl"] .sidebar {
   animation: syncPulse 2.4s ease infinite;
 }
 
+.sync-offlineMode .sync-dot {
+  background: var(--muted);
+}
+
 .sync-text {
   white-space: nowrap;
+}
+
+/* Auth 4-state badge (needs_revalidation / logged_out) */
+.topbar-auth-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.topbar-auth-badge.auth-needs_revalidation {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.topbar-auth-badge.auth-logged_out {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Connectivity prompt actions */
+.offline-prompt-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
 }
 
 @keyframes syncPulse {
@@ -306,7 +346,8 @@ html[dir="rtl"] .sidebar {
 }
 
 /* Active session indicator — exam countdown or practice stopwatch,
-   mirrored from the Exam page's own engines (display-only). */
+   mirrored from the Exam page's own engines (display-only). Docked
+   into the TopBar with a short fade/slide (framer-motion). */
 .topbar-session {
   display: flex;
   align-items: center;
@@ -320,6 +361,16 @@ html[dir="rtl"] .sidebar {
   color: var(--text);
   font-size: var(--text-xs);
   font-weight: 600;
+
+  /* Avoid a jarring layout pop when the pill mounts under AnimatePresence */
+  flex-shrink: 0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.topbar-session:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .topbar-session svg {
@@ -385,6 +436,10 @@ html[dir="rtl"] .sidebar {
 .account-avatar {
   width: 36px;
   height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   border-radius: var(--radius-full);
@@ -517,7 +572,8 @@ html[dir="rtl"] .app-main {
     bottom: 0;
     left: 0;
     right: 0;
-    z-index: var(--z-modal);
+    /* Sit below modal/toast layers so dialogs always win */
+    z-index: calc(var(--z-modal) - 1);
 
     height: var(--mobile-nav-height);
     padding-bottom: env(safe-area-inset-bottom);
@@ -644,3 +700,75 @@ button.topbar-sync:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+
+/* =========================================================
+   TopBar — narrow-width layout (priority-based, no font shrinking)
+   Drop order when space runs out:
+     1. decorative  — date line (≤768), full clock + auth badge (≤600),
+        weather (≤360, pre-existing)
+   Always kept: session timer, sync state, theme toggle, account,
+   language toggle. Desktop (≥769px) untouched — all rules width-scoped.
+   ========================================================= */
+
+.topbar-left {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.topbar-right {
+  flex-shrink: 0;
+}
+
+.topbar-clock,
+.topbar-sync,
+.topbar-session {
+  flex-shrink: 0;
+}
+
+/* The badge is the only shrinkable item: it ellipsizes instead of
+   pushing the session timer or the right cluster around. Full label
+   stays on title/aria-label. */
+.topbar-auth-badge {
+  min-width: 0;
+  max-width: 190px;
+  overflow: hidden;
+}
+
+.topbar-auth-badge-text {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .topbar-left {
+    gap: var(--space-2);
+  }
+
+  .topbar-right {
+    gap: 6px;
+  }
+
+  /* Full clock yields to the session timer: layout.css's own base
+     .topbar-datetime rule (later in the cascade than the legacy
+     components.css hide) would otherwise keep it visible here. */
+  .topbar-datetime {
+    display: none;
+  }
+
+  /* Session timer and sync dot must never be squeezed out —
+     the badge yields first. */
+  .topbar-auth-badge {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar-weather {
+    display: none;
+  }
+}
+

@@ -11,14 +11,21 @@ import {
   updateExam,
   moveExam,
   deleteExam,
-  getExamDataKey,
+  getExamData,
+  saveExamData,
+  getSettings,
   MAX_QUESTIONS,
 generateId,} from "../services/dataService";
+import { isExamAttemptActive } from "../services/timerUi";
 import { useTranslation } from "../i18n";
 import { useToast } from "../context/ToastContext";
 import { computeFormQuestionNumbers } from "../services/scoring";
 import Icon from "../components/ui/Icon";
 import Modal from "../components/ui/Modal";
+import Badge from "../components/ui/Badge";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import PageHeader from "../components/ui/PageHeader";
+import Button from "../components/ui/Button";
 
 const ANSWER_OPTIONS = ["1", "2", "3", "4"];
 const QUESTIONS_PER_PAGE = 50;
@@ -85,13 +92,13 @@ function AnswerKeyGrid({ questionCount, customNumbering, startNumber, useStep, s
 
       {totalPages > 1 && (
         <div className="answer-key-pagination">
-          <button type="button" className="secondary-button" disabled={akPage === 1} onClick={() => setAkPage((p) => p - 1)}>
+          <Button variant="secondary" size="sm" disabled={akPage === 1} onClick={() => setAkPage((p) => p - 1)}>
             ← {t("exam.pagination.previous")}
-          </button>
+          </Button>
           <span>{t("exam.pagination.page")} {akPage} {t("exam.pagination.of")} {totalPages}</span>
-          <button type="button" className="secondary-button" disabled={akPage === totalPages} onClick={() => setAkPage((p) => p + 1)}>
+          <Button variant="secondary" size="sm" disabled={akPage === totalPages} onClick={() => setAkPage((p) => p + 1)}>
             {t("exam.pagination.next")} →
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -112,9 +119,12 @@ function Folder() {
   const [moveExamState, setMoveExamState] = useState(null);
   const [moveTargetId, setMoveTargetId] = useState("");
   const [showMoveModal, setShowMoveModal] = useState(false);
+  const [deleteExamTarget, setDeleteExamTarget] = useState(null);
 
   const [editingExam, setEditingExam] =
     useState(null);
+
+  const [createStep, setCreateStep] = useState(1);
 
   const [examName, setExamName] =
     useState("");
@@ -181,6 +191,26 @@ function Folder() {
     );
   }, [id, dataVersion]);
 
+  // Active normal-exam attempts on this folder's cards. Remaining time is
+  // read from the SAME testbox-timer-${id} record useTimer owns (display
+  // only — no second timer engine). Depends on `exams` so a dataVersion
+  // refresh (return from exam) recomputes the badge.
+  const activeExamIds = useMemo(() => {
+    const map = {};
+    for (const exam of exams) {
+      if (exam?.type !== "exam") continue;
+      try {
+        const ed = getExamData(exam.id);
+        if (isExamAttemptActive(ed)) {
+          map[String(exam.id)] = true;
+        }
+      } catch {
+        // ignore unreadable records
+      }
+    }
+    return map;
+  }, [exams]);
+
   // Effective question numbers for the open form — the answer-key grid
   // and the save path both consume this, so custom numbering can never
   // fall back to the raw (hidden, empty) count input.
@@ -202,6 +232,13 @@ function Folder() {
   }
 
   function resetForm() {
+    let prefs;
+    try {
+      prefs = getSettings();
+    } catch {
+      prefs = undefined;
+    }
+
     setExamName("");
     setQuestionCount("");
     setCustomNumbering(false);
@@ -209,8 +246,8 @@ function Folder() {
     setEndNumber("");
     setUseStep(false);
     setStep("1");
-    setNegativeMarking(true);
-    setExamType("practice");
+    setNegativeMarking(prefs?.defaultNegativeMarking !== false);
+    setExamType(prefs?.defaultExamType === "exam" ? "exam" : "practice");
     setTimerDuration("60");
     setStopwatchEnabled(false);
     setAnswerKeyData({});
@@ -219,11 +256,13 @@ function Folder() {
   function openCreateModal() {
     setEditingExam(null);
     resetForm();
+    setCreateStep(1);
     setShowModal(true);
   }
 
   function openEditModal(exam) {
     setEditingExam(exam);
+    setCreateStep(1);
 
     setExamName(exam.name);
     setQuestionCount(
@@ -259,7 +298,7 @@ function Folder() {
     setStopwatchEnabled(exam.stopwatchEnabled === true);
     // Load existing answer key from exam data
     try {
-      const data = JSON.parse(localStorage.getItem(getExamDataKey(exam.id)) || "{}");
+      const data = getExamData(exam.id);
       setAnswerKeyData(data.answerKey || {});
     } catch {
       setAnswerKeyData({});
@@ -271,19 +310,18 @@ function Folder() {
   function closeModal() {
     setShowModal(false);
     setEditingExam(null);
+    setCreateStep(1);
     resetForm();
   }
 
-  function saveExamForm() {
-    const name =
-      examName.trim();
+  // Shared step-1 validation (name, numbering, count). Returns
+  // { name, count } or null after showing the matching warning toast.
+  function validateBasics() {
+    const name = examName.trim();
 
     if (!name) {
-      showToast(
-        t("exam.validation.nameRequired"),
-        "warning"
-      );
-      return;
+      showToast(t("exam.validation.nameRequired"), "warning");
+      return null;
     }
 
     let count;
@@ -296,89 +334,62 @@ function Folder() {
         String(endNumber ?? "").trim() === "" ||
         (useStep && String(step ?? "").trim() === "")
       ) {
-        showToast(
-          t("exam.validation.numbersInvalid"),
-          "warning"
-        );
-        return;
+        showToast(t("exam.validation.numbersInvalid"), "warning");
+        return null;
       }
 
-      const start =
-        Number(startNumber);
+      const start = Number(startNumber);
+      const end = Number(endNumber);
 
-      const end =
-        Number(endNumber);
-
-      if (
-        !Number.isInteger(start) ||
-        !Number.isInteger(end)
-      ) {
-        showToast(
-          t("exam.validation.numbersInvalid"),
-          "warning"
-        );
-        return;
+      if (!Number.isInteger(start) || !Number.isInteger(end)) {
+        showToast(t("exam.validation.numbersInvalid"), "warning");
+        return null;
       }
 
       if (end < start) {
-        showToast(
-          t("exam.validation.endBeforeStart"),
-          "warning"
-        );
-        return;
+        showToast(t("exam.validation.endBeforeStart"), "warning");
+        return null;
       }
 
-      const currentStep =
-        useStep
-          ? Number(step)
-          : 1;
+      const currentStep = useStep ? Number(step) : 1;
 
-      if (
-        !Number.isInteger(
-          currentStep
-        ) ||
-        currentStep < 1
-      ) {
-        showToast(
-          t("exam.validation.stepInvalid"),
-          "warning"
-        );
-        return;
+      if (!Number.isInteger(currentStep) || currentStep < 1) {
+        showToast(t("exam.validation.stepInvalid"), "warning");
+        return null;
       }
 
-      count =
-        Math.floor(
-          (end - start) /
-            currentStep
-        ) + 1;
+      count = Math.floor((end - start) / currentStep) + 1;
     } else {
-      count =
-        Number(
-          questionCount
-        );
+      count = Number(questionCount);
 
-      if (
-        !Number.isInteger(count) ||
-        count < 1
-      ) {
-        showToast(
-          t("exam.validation.countMin"),
-          "warning"
-        );
-        return;
+      if (!Number.isInteger(count) || count < 1) {
+        showToast(t("exam.validation.countMin"), "warning");
+        return null;
       }
     }
 
-    if (
-      count >
-      MAX_QUESTIONS
-    ) {
+    if (count > MAX_QUESTIONS) {
       showToast(
         `${t("exam.validation.countMax")} ${MAX_QUESTIONS} باشد.`,
         "warning"
       );
-      return;
+      return null;
     }
+
+    return { name, count };
+  }
+
+  function goNextStep() {
+    if (validateBasics()) {
+      setCreateStep(2);
+    }
+  }
+
+  function saveExamForm() {
+    const validated = validateBasics();
+    if (!validated) return;
+
+    const { name, count } = validated;
 
     // Drop key entries for questions that no longer exist (e.g. the
     // numbering was changed after keys were set). Only current numbers
@@ -447,13 +458,11 @@ function Folder() {
         return;
       }
 
-      // Save answer key for exam type
+      // Save answer key for exam type (dirty-first via saveExamData)
       if (examType === "exam" && Object.keys(prunedKeyData).length > 0) {
         try {
-          const key = getExamDataKey(editingExam.id);
-          const existing = JSON.parse(localStorage.getItem(key) || "{}");
-          existing.answerKey = prunedKeyData;
-          localStorage.setItem(key, JSON.stringify(existing));
+          const existing = getExamData(editingExam.id);
+          saveExamData(editingExam.id, { ...existing, answerKey: prunedKeyData });
         } catch {
           // non-fatal: answer key was set in-memory via modal state
         }
@@ -520,13 +529,11 @@ function Folder() {
         return;
       }
 
-      // Save answer key for exam type
+      // Save answer key for exam type (dirty-first via saveExamData)
       if (examType === "exam" && Object.keys(prunedKeyData).length > 0) {
         try {
-          const key = getExamDataKey(newExam.id);
-          const existing = JSON.parse(localStorage.getItem(key) || "{}");
-          existing.answerKey = prunedKeyData;
-          localStorage.setItem(key, JSON.stringify(existing));
+          const existing = getExamData(newExam.id);
+          saveExamData(newExam.id, { ...existing, answerKey: prunedKeyData });
         } catch {
           // non-fatal: answer key was set in-memory via modal state
         }
@@ -538,14 +545,13 @@ function Folder() {
   }
 
   function handleDeleteExam(exam) {
-    const confirmed =
-      window.confirm(
-        `${t("exam.delete.confirm")} «${exam.name}»`
-      );
+    setDeleteExamTarget(exam);
+  }
 
-    if (!confirmed) {
-      return;
-    }
+  function confirmDeleteExam() {
+    const exam = deleteExamTarget;
+    setDeleteExamTarget(null);
+    if (!exam) return;
 
     const deleted =
       deleteExam(
@@ -656,44 +662,28 @@ function Folder() {
 
       <div className="folder-page-header">
 
-        <div className="folder-page-title">
-
-          <Link
-            to="/folders"
-            className="back-link"
-          >
-            {t("folder.back")}
-          </Link>
-
-          <div className="folder-heading-row">
-
-            <div className="folder-heading-icon">
-              <Icon name="folder" size={22} />
-            </div>
-
-            <div>
-              <h1>
-                {folder.name}
-              </h1>
-
-              <p>
-                {exams.length} {t("folder.examsCount")}
-              </p>
-            </div>
-
-          </div>
-
-        </div>
-
-        <button
-          className="primary-button"
-          onClick={
-            openCreateModal
-          }
+        <Link
+          to="/folders"
+          className="back-link"
         >
-          <Icon name="plus" size={16} />
-          {t("folder.newExam")}
-        </button>
+          {t("folder.back")}
+        </Link>
+
+        <PageHeader
+          icon="folder"
+          iconSize={22}
+          title={folder.name}
+          subtitle={`${exams.length} ${t("folder.examsCount")}`}
+          actions={
+            <Button
+              variant="primary"
+              onClick={openCreateModal}
+              icon={<Icon name="plus" size={16} />}
+            >
+              {t("folder.newExam")}
+            </Button>
+          }
+        />
 
       </div>
 
@@ -713,15 +703,15 @@ function Folder() {
             {t("folder.empty.description")}
           </p>
 
-          <button
-            className="primary-button"
+          <Button
+            variant="primary"
             onClick={
               openCreateModal
             }
+            icon={<Icon name="plus" size={16} />}
           >
-            <Icon name="plus" size={16} />
             {t("folder.empty.action")}
-          </button>
+          </Button>
 
         </div>
 
@@ -742,13 +732,35 @@ function Folder() {
               >
 
                 <div className="exam-list-icon">
-                  <Icon name="fileText" size={20} />
+                  <Icon
+                    name={exam.type === "exam" ? "fileText" : "bookOpen"}
+                    size={20}
+                  />
                 </div>
 
                 <div className="exam-list-info">
 
                   <h3>
                     {exam.name}
+                    <Badge
+                      variant={exam.type === "exam" ? "primary" : "muted"}
+                      size="sm"
+                    >
+                      {exam.type === "exam"
+                        ? t("exam.type.exam")
+                        : t("exam.type.practice")}
+                    </Badge>
+                    {activeExamIds[String(exam.id)] && (
+                      <Badge
+                        variant="primary"
+                        size="sm"
+                        className="exam-list-active-badge"
+                        title={t("exam.start.inProgress")}
+                      >
+                        <Icon name="timer" size={12} />
+                        {t("exam.start.inProgress")}
+                      </Badge>
+                    )}
                   </h3>
 
                   <div className="exam-list-meta">
@@ -808,7 +820,7 @@ function Folder() {
 
                 <button
                   type="button"
-                  title="انتقال"
+                  title={t("exam.move.prompt")}
                   aria-label={t("exam.move.prompt")}
                   onClick={() =>
                     handleMoveExam(
@@ -872,24 +884,22 @@ function Folder() {
         </select>
 
         <div className="modal-buttons">
-          <button
-            type="button"
-            className="secondary-button"
+          <Button
+            variant="secondary"
             onClick={() => {
               setShowMoveModal(false);
               setMoveExamState(null);
             }}
           >
             {t("exam.cancel")}
-          </button>
+          </Button>
 
-          <button
-            type="button"
-            className="primary-button"
+          <Button
+            variant="primary"
             onClick={handleMoveSubmit}
           >
             {t("exam.move.confirm")}
-          </button>
+          </Button>
         </div>
       </Modal>
 
@@ -900,7 +910,31 @@ function Folder() {
         subtitle={editingExam ? t("exam.edit.description") : t("exam.create.description")}
         size="lg"
       >
+            {!editingExam && (
+              <ol className="wizard-steps">
+                <li
+                  className={`wizard-step ${createStep === 1 ? "is-active" : ""}`}
+                  aria-current={createStep === 1 ? "step" : undefined}
+                >
+                  <span className="wizard-step-index" aria-hidden="true">1</span>
+                  {t("exam.create.stepBasics")}
+                </li>
+                <li
+                  className={`wizard-step ${createStep === 2 ? "is-active" : ""}`}
+                  aria-current={createStep === 2 ? "step" : undefined}
+                >
+                  <span className="wizard-step-index" aria-hidden="true">2</span>
+                  {examType === "exam"
+                    ? t("exam.create.stepAnswerKey")
+                    : t("exam.create.stepReview")}
+                </li>
+              </ol>
+            )}
+
             <div className="modal-form">
+
+              {(editingExam || createStep === 1) && (
+                <>
 
               <label>
                 {t("exam.name.label")}
@@ -974,13 +1008,17 @@ function Folder() {
                 </>
               )}
 
-              {examType === "exam" && (
+                </>
+              )}
+
+              {examType === "exam" &&
+                (editingExam || createStep === 2) && (
                 <div className="answer-key-editor">
                   <label>{t("exam.answerKey.label")}</label>
                   <p className="answer-key-hint">{t("exam.answerKey.hint")}</p>
 
                   <div className="answer-key-bulk">
-                    <button type="button" className="secondary-button" onClick={() => {
+                    <Button variant="secondary" size="sm" onClick={() => {
                       const newKey = {};
                       effectiveNumbers.forEach((num) => {
                         newKey[num] = "1";
@@ -988,10 +1026,10 @@ function Folder() {
                       setAnswerKeyData(newKey);
                     }}>
                       {t("exam.answerKey.setAll")}
-                    </button>
-                    <button type="button" className="secondary-button" onClick={() => setAnswerKeyData({})}>
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => setAnswerKeyData({})}>
                       {t("exam.answerKey.clear")}
-                    </button>
+                    </Button>
                   </div>
 
                   <div className="answer-key-count">
@@ -1012,6 +1050,42 @@ function Folder() {
                   />
                 </div>
               )}
+
+              {!editingExam && createStep === 2 && examType === "practice" && (
+                <div className="wizard-review">
+                  <div className="wizard-review-row">
+                    <span>{t("exam.name.label")}</span>
+                    <strong>{examName || "—"}</strong>
+                  </div>
+                  <div className="wizard-review-row">
+                    <span>{t("exam.type.label")}</span>
+                    <strong>{t("exam.type.practice")}</strong>
+                  </div>
+                  <div className="wizard-review-row">
+                    <span>{t("exam.stopwatch.label")}</span>
+                    <strong>
+                      {stopwatchEnabled
+                        ? t("exam.stopwatch.on")
+                        : t("exam.stopwatch.off")}
+                    </strong>
+                  </div>
+                  <div className="wizard-review-row">
+                    <span>{t("exam.questionCount.label")}</span>
+                    <strong>{effectiveNumbers.length}</strong>
+                  </div>
+                  <div className="wizard-review-row">
+                    <span>{t("exam.negativeMarking")}</span>
+                    <strong>
+                      {negativeMarking
+                        ? t("exam.create.on")
+                        : t("exam.create.off")}
+                    </strong>
+                  </div>
+                </div>
+              )}
+
+              {(editingExam || createStep === 1) && (
+                <>
 
               {!customNumbering && (
                 <>
@@ -1277,35 +1351,66 @@ function Folder() {
 
               </div>
 
+                </>
+              )}
+
             </div>
 
             <div className="modal-buttons">
 
-              <button
-                type="button"
-                className="secondary-button"
+              <Button
+                variant="secondary"
                 onClick={
                   closeModal
                 }
               >
                 {t("exam.cancel")}
-              </button>
+              </Button>
 
-              <button
-                type="button"
-                className="primary-button"
-                onClick={
-                  saveExamForm
-                }
-              >
-                {editingExam
-                  ? t("exam.save")
-                  : t("exam.create.submit")}
-              </button>
+              {!editingExam && createStep === 2 && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setCreateStep(1)}
+                >
+                  {t("exam.create.back")}
+                </Button>
+              )}
+
+              {!editingExam && createStep === 1 && (
+                <Button
+                  variant="primary"
+                  onClick={goNextStep}
+                >
+                  {t("exam.create.next")}
+                </Button>
+              )}
+
+              {(editingExam || createStep === 2) && (
+                <Button
+                  variant="primary"
+                  onClick={
+                    saveExamForm
+                  }
+                >
+                  {editingExam
+                    ? t("exam.save")
+                    : t("exam.create.submit")}
+                </Button>
+              )}
 
             </div>
 
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deleteExamTarget)}
+        onClose={() => setDeleteExamTarget(null)}
+        onConfirm={confirmDeleteExam}
+        title={t("common.delete")}
+        message={`${t("exam.delete.confirm")} «${deleteExamTarget?.name || ""}»`}
+        confirmLabel={t("common.delete")}
+        cancelLabel={t("common.cancel")}
+      />
 
     </section>
   );

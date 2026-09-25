@@ -28,20 +28,73 @@
    Base dot is an in-flow 5px success circle; intensity
    scales it so busy days read heavier at a glance. */
 
-.calendar-day.intensity-2 .calendar-day-dot {
+.calendar-day-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.calendar-day-dot.intensity-2 {
   width: 6px;
   height: 6px;
   opacity: 0.8;
 }
 
-.calendar-day.intensity-3 .calendar-day-dot {
+.calendar-day-dot.intensity-3 {
   width: 7px;
   height: 7px;
 }
 
-.calendar-day.intensity-4 .calendar-day-dot {
+.calendar-day-dot.intensity-4 {
   width: 7px;
   height: 7px;
+  box-shadow: 0 0 0 3px var(--success-soft);
+}
+
+.calendar-day-dot.is-empty {
+  width: 5px;
+  height: 5px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-hover);
+}
+
+.calendar-day.no-activity .calendar-day-number {
+  color: var(--muted);
+}
+
+.calendar-intensity-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.calendar-intensity-label,
+.calendar-intensity-caption {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+
+.calendar-intensity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.calendar-intensity-dot.is-empty {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-hover);
+}
+
+.calendar-intensity-dot.intensity-2 { opacity: 0.65; }
+.calendar-intensity-dot.intensity-3 { opacity: 0.85; }
+.calendar-intensity-dot.intensity-4 {
+  opacity: 1;
   box-shadow: 0 0 0 3px var(--success-soft);
 }
 
@@ -108,10 +161,29 @@
   color: var(--muted);
 }
 
+.day-detail-exam-name.is-link {
+  color: inherit;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: color var(--transition);
+}
+
+.day-detail-exam-name.is-link:hover {
+  color: var(--primary);
+}
+
+.day-detail-exam-name.is-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 .day-detail-completed-badge {
   width: 18px;
   height: 18px;
   margin: 0;
+  padding: 0;
+
+  justify-content: center;
 
   background: var(--success-soft);
   color: var(--success);
