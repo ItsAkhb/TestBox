@@ -621,8 +621,11 @@ html[dir="ltr"] .modal { direction: ltr; }
     box-shadow var(--transition);
 }
 
-html[dir="rtl"] .modal input { direction: rtl; }
-html[dir="ltr"] .modal input { direction: ltr; }
+/* dir="auto" inputs (mixed fa/en names) opt out: the attribute decides
+   the base direction per value so the caret stays correct for Persian
+   text typed into an LTR UI (and vice versa). */
+html[dir="rtl"] .modal input:not([dir="auto"]) { direction: rtl; }
+html[dir="ltr"] .modal input:not([dir="auto"]) { direction: ltr; }
 
 .modal input:focus {
   border-color: var(--primary);
@@ -2006,6 +2009,17 @@ textarea:focus-visible {
 .input-field:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgb(37 99 235 / 10%);
+}
+
+/* Touch devices: keep inputs at 16px so Android WebView does not
+   auto-zoom on focus. Zooming under the fixed modal overlay breaks
+   keyboard/IME composition (Persian input in name fields). Fine
+   pointers (desktop) keep the compact sizes above. */
+@media (pointer: coarse) {
+  .modal input,
+  .input-field {
+    font-size: 16px;
+  }
 }
 
 .input-field.input-error {

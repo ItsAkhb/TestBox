@@ -99,3 +99,38 @@ export function broadcastSyncMessage(message) {
 export function isNativePlatform() {
   return isNative();
 }
+
+/**
+ * Open an OAuth URL in the platform-appropriate surface:
+ * - Android: Capacitor Browser (Chrome Custom Tab) — with the Google
+ *   app installed the native account screen is shown instead of a
+ *   generic browser; the flow still returns via the testbox:// deep
+ *   link (manifest filter + App.appUrlOpen). Never rejects.
+ * - Electron/web: window.open — Electron's setWindowOpenHandler
+ *   routes it to shell.openExternal (system browser).
+ */
+function openExternalFallback(url) {
+  try {
+    window.open(url, "_blank");
+    return true;
+  } catch {
+    // popup blocked or window unavailable — user can retry
+    return false;
+  }
+}
+
+export function openAuthUrl(url) {
+  if (isNative()) {
+    try {
+      return import("@capacitor/browser")
+        .then(({ Browser }) => Browser.open({ url }))
+        .then(() => true)
+        .catch(() => openExternalFallback(url));
+    } catch {
+      // dynamic import can fail synchronously when the plugin is
+      // unavailable — fall back rather than leave the flow hanging
+      return Promise.resolve(openExternalFallback(url));
+    }
+  }
+  return Promise.resolve(openExternalFallback(url));
+}

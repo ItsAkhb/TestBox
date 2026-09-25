@@ -948,6 +948,7 @@ function Folder() {
                   )
                 }
                 placeholder={t("exam.name.placeholder")}
+                dir="auto"
                 autoFocus
               />
 

@@ -415,6 +415,7 @@ function Folders() {
           value={renameValue}
           onChange={(event) => setRenameValue(event.target.value)}
           placeholder={t("folders.create.namePlaceholder")}
+          dir="auto"
           autoFocus
         />
 
@@ -458,6 +459,7 @@ function Folders() {
             )
           }
           placeholder={t("folders.create.namePlaceholder")}
+          dir="auto"
         />
 
         {subjects.length > 0 && (

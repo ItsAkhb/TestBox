@@ -199,6 +199,7 @@ function Subjects() {
           value={subjectName}
           onChange={(e) => setSubjectName(e.target.value)}
           placeholder={t("subjects.namePlaceholder")}
+          dir="auto"
           autoFocus
         />
 

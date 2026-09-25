@@ -19,6 +19,8 @@ import {
   isAuthCallbackUrl,
 } from "../services/authFlow";
 
+import { openAuthUrl } from "../services/native";
+
 
 const AuthContext = createContext(null);
 
@@ -280,9 +282,16 @@ export function AuthProvider({
   // Web PKCE returns are handled by supabase-js detectSessionInUrl.
   useEffect(() => {
     let cancelled = false;
+    // One exchange per callback URL: the preload buffer, the live
+    // listener, and the boot-time location check can surface the same
+    // URL — a spent PKCE code must never be exchanged twice (Supabase
+    // rejects it, which would flash a false error after a real login).
+    let lastCallbackUrl = null;
 
     async function finishCallback(url) {
       if (!url || cancelled) return;
+      if (url === lastCallbackUrl) return;
+      lastCallbackUrl = url;
       const result = await handleAuthCallback(supabase.auth, url);
       if (!result.ok && result.error && result.error !== "no_code") {
         if (!cancelled) {
@@ -319,6 +328,14 @@ export function AuthProvider({
         finishCallback(url);
       });
       if (typeof off === "function") unsubscribers.push(off);
+      // Drain a callback that arrived while the renderer was still
+      // booting: main.cjs forwards the deep link on a timer, so the
+      // IPC can beat React mount — the preload buffers it until this
+      // pull consumes it exactly once.
+      if (typeof window.testboxDesktop.getPendingAuthUrl === "function") {
+        const pending = window.testboxDesktop.getPendingAuthUrl();
+        if (pending) finishCallback(pending);
+      }
     }
 
     return () => {
@@ -348,15 +365,14 @@ export function AuthProvider({
         platform,
       });
 
-      // Electron/Android: open the system browser and wait for the
-      // custom-scheme callback. Web: supabase-js performs the redirect.
+      // Electron: window.open is routed to shell.openExternal by the
+      // main process. Android: openAuthUrl hands the URL to a Chrome
+      // Custom Tab (native Google account screen when the Google app
+      // is installed) — never the bare WebView. Web: supabase-js
+      // performs the redirect itself.
       const openExternal = platform.needsCustomScheme
         ? (url) => {
-            try {
-              window.open(url, "_blank");
-            } catch {
-              // popup blocked — user can retry
-            }
+            openAuthUrl(url);
           }
         : undefined;
 
