@@ -1,11 +1,11 @@
 # Packaging: Windows (Electron) & Android (Capacitor)
 
-TestBox v2.1.3 ships three ways from one codebase:
+TestBox v2.2.0-beta.1 ships three ways from one codebase:
 
 | Platform | Wrapper | Output | Config |
 |---|---|---|---|
 | Web | none (Vite static site) | `dist/` → GitHub Pages | `vite.config.js` |
-| Windows | Electron 44 | `release/TestBox-Setup-2.1.3.exe`, `release/TestBox-Portable-2.1.3.exe` | `electron-builder.json5` |
+| Windows | Electron 44 | `release/TestBox-Setup-2.2.0-beta.1.exe` (this release ships the NSIS installer only; the portable target stays in the config for future builds) | `electron-builder.json5` |
 | Android | Capacitor 7 | `android/app/build/outputs/apk/release/app-release.apk` | `capacitor.config.json` |
 
 ## Rationale
@@ -40,15 +40,16 @@ npm run dist:win       # build:packaged + electron-builder --win
 
 Outputs in `release/` (gitignored):
 
-- `TestBox-Setup-2.1.3.exe` — NSIS installer x64 (user-chosen install dir,
+- `TestBox-Setup-2.2.0-beta.1.exe` — NSIS installer x64 (user-chosen install dir,
   desktop + Start-menu shortcuts)
-- `TestBox-Portable-2.1.3.exe` — standalone portable x64
+- `TestBox-Portable-2.2.0-beta.1.exe` — standalone portable x64 (built only when
+  the portable target is requested; not shipped in v2.2.0-beta.1)
 
 Details:
 
 - appId `app.testbox.app`, productName `TestBox`, icon from
-  `electron/assets/icon.ico` (generated from `public/favicon.svg` via
-  `@resvg/resvg-js` + `png-to-ico`).
+  `electron/assets/icon.ico` (generated from
+  `public/brand/testbox-app-icon.svg` via `@resvg/resvg-js` + `png-to-ico`).
 - `electron-builder.json5` sets `electronDist: "node_modules/electron/dist"`.
   **Why:** electron-builder's default download-extract-rename step
   (`win-unpacked.tmp` → `win-unpacked`) deterministically fails with EPERM on
@@ -103,7 +104,9 @@ Output: `android/app/build/outputs/apk/release/app-release.apk`.
   `"type": "module"` in package.json): appId `app.testbox.app`, webDir `dist`,
   `androidScheme: https`, no cleartext, SplashScreen `#FAF8F5` 800 ms,
   StatusBar overlay.
-- Launcher mipmaps generated from `public/favicon.svg` on `#863BFF`.
+- Launcher mipmaps generated from `public/brand/testbox-app-icon.svg` on
+  TestBox teal `#0E7490` (adaptive background in
+  `values/ic_launcher_background.xml`).
 - Hardware back button: `src/services/native.js` → history.back() unless at
   root, then exits; wired in `Layout.jsx`.
 
@@ -163,29 +166,70 @@ create policy "own settings" on user_settings for all using (auth.uid() = user_i
 create policy "own tags" on tags for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 ```
 
-### Friends schema (v2.1.1)
+### Optional future database cleanup (Friend System removed)
+
+The Friend System was removed from the application. These tables may still exist in Supabase unused — do not drop them automatically; run only when ready:
 
 ```sql
-create table if not exists profiles (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  username text unique not null, display_name text,
-  updated_at timestamptz default now()
-);
-create table if not exists friend_requests (
-  id bigint generated always as identity primary key,
-  requester_id uuid not null references auth.users(id) on delete cascade,
-  addressee_id uuid not null references auth.users(id) on delete cascade,
-  created_at timestamptz default now(),
-  unique (requester_id, addressee_id)
-);
-create table if not exists friendships (
-  id bigint generated always as identity primary key,
-  user_a uuid not null references auth.users(id) on delete cascade,
-  user_b uuid not null references auth.users(id) on delete cascade,
-  created_at timestamptz default now(),
-  unique (user_a, user_b)
-);
+-- OPTIONAL — destructive; not part of any app deploy.
+-- drop table if exists friend_requests;
+-- drop table if exists friendships;
+-- drop table if exists profiles;
 ```
-(RLS: profiles readable by authenticated users, writable only by owner;
-requests visible/participable by both parties; friendships visible to
-both sides. Presence = profiles.updated_at heartbeat within 5 min.)
+
+## Google Sign-In (Supabase OAuth) — deploy/setup steps
+
+These are **dashboard configuration steps** (not performed by this repository).
+The client never holds the Google Client Secret — it stays in Supabase only.
+
+### Google Cloud Console
+
+1. APIs & Services → Credentials → **Create credentials → OAuth client ID** → type **Web application**.
+2. **Authorized JavaScript origins** (exact):
+   - Dev: `http://127.0.0.1:5173`
+   - Prod: `https://itsakhb.github.io`
+3. **Authorized redirect URIs** (exact):
+   - `https://mnkqjwtqtzlwmbzfquzf.supabase.co/auth/v1/callback`
+4. Copy the **Client ID** and **Client secret** into Supabase (next step). Do not commit either value.
+
+### Supabase Dashboard → Authentication → Providers → Google
+
+1. Enable **Google**.
+2. Paste Google **Client ID** + **Client secret**.
+3. **Authentication → URL Configuration**:
+   - **Site URL**: `https://itsakhb.github.io/TestBox/`
+   - **Redirect URLs** (allow-list, exact):
+     - Dev: `http://127.0.0.1:5173/` and `http://127.0.0.1:5173/TestBox/`
+     - Prod: `https://itsakhb.github.io/TestBox/`
+     - Desktop/Android custom scheme: `testbox://auth/callback`
+4. Keep the existing email/password provider **enabled** until migration is verified for existing accounts (coexistence period). Do not disable it until every existing user has signed in with Google at least once with a matching verified email (same Supabase UUID).
+
+### Optional env (no secrets)
+
+| Variable | Purpose |
+|---|---|
+| `VITE_SITE_URL` | Absolute site origin+path override for `redirectTo` when `window.location` is not trustworthy (rare). Never put a client secret here. |
+
+### Existing-account linking (UUID preservation)
+
+- If a Google account’s **verified email** matches an existing confirmed Supabase user, configure/link so the **same auth UUID** is reused (Supabase identity linking). Never create a second user for the same person.
+- Until linking is verified end-to-end, password login remains available on the Sign In page.
+
+### Platform return paths
+
+| Platform | Flow |
+|---|---|
+| Web | `signInWithOAuth` → Google → Supabase → `?code=` on the allowed redirect → PKCE exchange (`detectSessionInUrl`). HashRouter-safe (code is in the query, not the hash). |
+| Windows/Electron | OAuth opens in the **system browser**; Supabase redirects to `testbox://auth/callback?code=…`. Main process registers the `testbox` protocol and forwards the URL to the renderer for exchange. Requires a packaged install (protocol registration is best-effort in bare `electron .` dev). |
+| Android | Same custom scheme `testbox://auth/callback` via `AndroidManifest` intent-filter + Capacitor `appUrlOpen`. Rebuild the native project after manifest changes (`npx cap sync android`). |
+
+### Manual verification checklist (not automated)
+
+- [ ] Web: Continue with Google → completes → lands authenticated
+- [ ] Web: reload while signed in → session restored
+- [ ] Web: logout → guest UI; login again → same user UUID / same local data namespace
+- [ ] Existing password account: first Google sign-in with same email → **same** UUID (sync unchanged)
+- [ ] Offline startup with a valid persisted session → `needs_revalidation`, local data still under the same prefix
+- [ ] Windows package: Google button opens system browser; return via `testbox://` signs in
+- [ ] Android package: Google button; return via deep link signs in
+

@@ -1,5 +1,9 @@
 # TestBox
 
+<p align="center">
+  <img src="public/brand/testbox-primary-lockup.svg" width="420" alt="TestBox — Learn · Practice · Grow" />
+</p>
+
 **TestBox** is an offline-first study app for creating, managing, and practicing test answer sheets — on the web, on Windows, and on Android.
 
 Organize exams into folders and subjects, solve practice sheets with a built-in stopwatch, track daily study activity on a calendar, and review marked questions — with or without an internet connection.
@@ -14,7 +18,6 @@ Organize exams into folders and subjects, solve practice sheets with a built-in 
 * **Practice stopwatch** — measures real study time (pause-aware), feeds daily reports and monthly totals
 * **Tags (برچسب‌ها)** — tag individual questions (create/rename/delete/assign), fully synced
 * **Unresolved questions (حل‌نشده)** — mark questions you worked on but couldn't solve; tracked in reports without distorting accuracy
-* **Friends (دوستان)** — unique usernames, friend requests, online presence
 
 ### Insights
 * Dashboard with today's stats, streaks, and a 7-day activity rhythm
@@ -28,7 +31,7 @@ Organize exams into folders and subjects, solve practice sheets with a built-in 
 
 ### Platforms
 * 🌐 **Web** — https://itsakhb.github.io/TestBox/ (installable in the browser, works offline)
-* 🪟 **Windows** — installer & portable: [releases](https://github.com/ItsAkhb/TestBox/releases) (Electron, sandboxed)
+* 🪟 **Windows** — installer: [releases](https://github.com/ItsAkhb/TestBox/releases) (Electron, sandboxed)
 * 🤖 **Android** — APK: [releases](https://github.com/ItsAkhb/TestBox/releases) (Capacitor, hardware back-button support)
 
 ### Also
@@ -79,6 +82,7 @@ Builds:
 npm run build            # web (base /TestBox/)
 npm run build:packaged   # web with relative paths (Electron/Capacitor)
 npm run dist:win         # Windows installer + portable → release/
+npm run build:packaged && npx electron-builder --win nsis   # installer only
 cd android && ./gradlew assembleRelease   # Android APK (see docs/packaging.md)
 ```
 
@@ -111,7 +115,16 @@ Never commit environment files or private keys to the repository.
 
 ## Current Status
 
-**v2.1.3 released.**
+**v2.2.0-beta.1 released.**
+
+What's new in v2.2.0-beta.1:
+
+* **Refined brand identity** — new master logo system in [`public/brand/`](public/brand/): crafted wordmark, "Learn · Practice · Grow" lockups, detailed answer-sheet mark, dark variants; used on the auth screens
+* **Friend system removed** — the feature and all related services/routes were dropped
+* **Offline mode UX** — global offline prompt and capability-gated auth flows
+* **Theme system module** — single source of truth for light/dark/system preference with cross-tab sync
+* **Tags improvements** — shared question tag picker (Tags + Exam), grouping and label helpers
+* New test coverage: statistics, tags UI, timers, settings UI, auth flow
 
 Implemented:
 
@@ -123,7 +136,6 @@ Implemented:
 
 In progress / planned:
 
-* Leaderboards / shared study stats between friends
 * Code-splitting for the web bundle
 * Code-signing certificates for Windows/macOS distribution
 
