@@ -1217,6 +1217,11 @@
       1;
   }
 
+  .exam-actions button:disabled {
+    opacity:
+      0.45;
+  }
+
   .exam-header {
     gap:
       10px;

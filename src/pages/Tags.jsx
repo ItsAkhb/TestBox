@@ -48,8 +48,10 @@ function Tags() {
   const [subjects, setSubjects] = useState(() => getSubjects());
   const [tags, setTags] = useState(() => getTags());
   const [activeTagId, setActiveTagId] = useState("");
-  const [collapsedSubjects, setCollapsedSubjects] = useState(() => new Set());
-  const [collapsedExams, setCollapsedExams] = useState(() => new Set());
+  // Default state: all groups COLLAPSED — the sets track what the user
+  // has explicitly expanded (empty set = everything closed, spec #5).
+  const [openSubjects, setOpenSubjects] = useState(() => new Set());
+  const [openExams, setOpenExams] = useState(() => new Set());
 
   const [showTagModal, setShowTagModal] = useState(false);
   const [editingTag, setEditingTag] = useState(null);
@@ -104,7 +106,7 @@ function Tags() {
   );
 
   const toggleSubject = useCallback((key) => {
-    setCollapsedSubjects((prev) => {
+    setOpenSubjects((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -113,7 +115,7 @@ function Tags() {
   }, []);
 
   const toggleExam = useCallback((examKey) => {
-    setCollapsedExams((prev) => {
+    setOpenExams((prev) => {
       const next = new Set(prev);
       if (next.has(examKey)) next.delete(examKey);
       else next.add(examKey);
@@ -364,7 +366,7 @@ function Tags() {
       ) : (
         <div className="tagged-groups rise-list">
           {groups.map((group) => {
-            const subjectOpen = !collapsedSubjects.has(group.key);
+            const subjectOpen = openSubjects.has(group.key);
             const subjectLabel = group.isUnknown
               ? t("tags.unknownSubject")
               : group.isUncategorized
@@ -415,7 +417,7 @@ function Tags() {
                     >
                       <div className="tagged-group-body">
                         {group.exams.map((examGroup) => {
-                          const examOpen = !collapsedExams.has(examGroup.examKey);
+                          const examOpen = openExams.has(examGroup.examKey);
                           const examLabel =
                             examGroup.examName || t("tags.unknownExam");
 

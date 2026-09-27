@@ -50,15 +50,19 @@ test("auth: Google sign-in trigger calls signInWithOAuth with provider google + 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].provider, "google");
   assert.equal(calls[0].options.redirectTo, "http://127.0.0.1:5173/TestBox/");
-  assert.equal(calls[0].options.skipRedirect, undefined);
+  assert.equal(calls[0].options.skipBrowserRedirect, undefined);
 });
 
-test("auth: external open path uses skipRedirect and hands off the URL", async () => {
+test("auth: external open path uses skipBrowserRedirect and hands off the URL", async () => {
   const flow = await loadAuthFlow();
   const opened = [];
   const auth = {
     signInWithOAuth: async (args) => {
-      assert.equal(args.options.skipRedirect, true);
+      // auth-js 2.x honors ONLY skipBrowserRedirect; any other name is
+      // ignored and the client navigates the window in-page, breaking
+      // the custom-scheme return (the Windows blank-page bug).
+      assert.equal(args.options.skipBrowserRedirect, true);
+      assert.equal(args.options.skipRedirect, undefined);
       return { data: { url: "https://example.test/oauth" }, error: null };
     },
   };
@@ -463,4 +467,32 @@ test("auth: packaging.md documents Google + Supabase deploy steps and redirect U
   assert.match(source, /itsakhb\.github\.io\/TestBox/);
   assert.match(source, /testbox:\/\/auth\/callback/);
   assert.match(source, /Client [Ss]ecret/);
+});
+
+test("auth: only skipBrowserRedirect reaches auth-js — the stale flag name is gone", async () => {
+  const flowSource = await readFile(
+    new URL("./authFlow.js", import.meta.url),
+    "utf8"
+  );
+  assert.ok(
+    !flowSource.includes("skipRedirect"),
+    "authFlow.js must not use the nonexistent skipRedirect option"
+  );
+  assert.ok(
+    flowSource.includes("options.skipBrowserRedirect = true"),
+    "external-open path sets the flag auth-js actually honors"
+  );
+
+  // The installed auth-js must still define the flag we depend on; if a
+  // future upgrade renames it again, the in-window redirect bug returns
+  // silently — fail here instead of in a live sign-in.
+  const goTrue = await readFile(
+    new URL(
+      "../../node_modules/@supabase/auth-js/dist/module/GoTrueClient.js",
+      import.meta.url
+    ),
+    "utf8"
+  );
+  assert.ok(goTrue.includes("skipBrowserRedirect"), "auth-js honors skipBrowserRedirect");
+  assert.ok(!goTrue.includes("skipRedirect"), "auth-js has no skipRedirect option");
 });

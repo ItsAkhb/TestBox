@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   Link,
+  useNavigate,
   useParams,
 } from "react-router-dom";
 
@@ -17,6 +18,7 @@ import {
   MAX_QUESTIONS,
 generateId,} from "../services/dataService";
 import { isExamAttemptActive } from "../services/timerUi";
+import { findLastAnsweredQuestion } from "../services/examNav";
 import { useTranslation } from "../i18n";
 import { useToast } from "../context/ToastContext";
 import { computeFormQuestionNumbers } from "../services/scoring";
@@ -107,6 +109,7 @@ function AnswerKeyGrid({ questionCount, customNumbering, startNumber, useStep, s
 
 function Folder() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const { showToast } = useToast();
 
@@ -206,6 +209,24 @@ function Folder() {
         }
       } catch {
         // ignore unreadable records
+      }
+    }
+    return map;
+  }, [exams]);
+
+  // Highest answered question per exam (persisted answers — the same
+  // record the exam page writes), for the card's "last answered" jump.
+  // Recomputes with `exams`, which refreshes on dataVersion changes.
+  const lastAnsweredMap = useMemo(() => {
+    const map = {};
+    for (const exam of exams) {
+      try {
+        const last = findLastAnsweredQuestion(getExamData(exam.id)?.answers);
+        if (last !== null) {
+          map[String(exam.id)] = last;
+        }
+      } catch {
+        // ignore unreadable records — button stays disabled
       }
     }
     return map;
@@ -719,7 +740,9 @@ function Folder() {
 
         <div className="exam-list">
 
-          {exams.map((exam) => (
+          {exams.map((exam) => {
+            const lastAnswered = lastAnsweredMap[String(exam.id)] ?? null;
+            return (
 
             <div
               key={exam.id}
@@ -807,6 +830,30 @@ function Folder() {
 
                 <button
                   type="button"
+                  disabled={lastAnswered === null}
+                  title={
+                    lastAnswered !== null
+                      ? t("exam.lastAnswered")
+                      : t("exam.lastAnswered.none")
+                  }
+                  aria-label={
+                    lastAnswered !== null
+                      ? t("exam.lastAnswered")
+                      : t("exam.lastAnswered.none")
+                  }
+                  onClick={() => {
+                    if (lastAnswered !== null) {
+                      navigate(
+                        `/exam/${exam.id}?question=${lastAnswered}`
+                      );
+                    }
+                  }}
+                >
+                  <Icon name="clock" size={15} />
+                </button>
+
+                <button
+                  type="button"
                   title={t("common.edit")}
                   aria-label={t("exam.edit.title")}
                   onClick={() =>
@@ -848,7 +895,8 @@ function Folder() {
 
             </div>
 
-          ))}
+            );
+          })}
 
         </div>
 

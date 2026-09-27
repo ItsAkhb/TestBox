@@ -77,8 +77,10 @@ export function deriveOAuthRedirectTo({
 
 /**
  * Start Google Sign-In via Supabase OAuth.
- * When `openExternal` is provided (Electron/system browser), asks the
- * client for a URL without navigating (`skipRedirect`) and hands it off.
+ * When `openExternal` is provided (Electron/Android), asks the
+ * client for a URL without navigating (`skipBrowserRedirect` — the
+ * only flag auth-js honors; a wrong name silently in-window
+ * redirects and breaks the testbox:// return) and hands it off.
  * Otherwise supabase-js performs the browser redirect.
  */
 export async function startGoogleSignIn(auth, { redirectTo, openExternal } = {}) {
@@ -91,7 +93,7 @@ export async function startGoogleSignIn(auth, { redirectTo, openExternal } = {})
 
   const options = { redirectTo };
   if (typeof openExternal === "function") {
-    options.skipRedirect = true;
+    options.skipBrowserRedirect = true;
   }
 
   try {

@@ -39,11 +39,13 @@ import { useSync } from "../context/SyncContext";
 const BACKOFF_BASE_MS = 5000;
 const BACKOFF_CAP_MS = 5 * 60 * 1000;
 
-// Periodic reconciliation watchdog interval. Long enough to stay cheap
-// (the online path is 2-4 HEAD count probes), short enough that a
-// missed event self-heals. Reconnect/visibility/local-mutation all
-// trigger sync immediately; this is the backstop.
-const WORK_CHECK_INTERVAL_MS = 3 * 60 * 1000;
+// Periodic reconciliation watchdog interval (spec: attempt sync every
+// 60 seconds for an authenticated user, even without local changes).
+// The online path is cheap (2-4 HEAD count probes → pull on mismatch);
+// reconnect/visibility/local-mutation all trigger sync immediately and
+// the in-flight guard (syncingRef) skips a tick while a cycle runs —
+// this is the backstop, not a second sync system.
+const WORK_CHECK_INTERVAL_MS = 60 * 1000;
 
 function computeBackoffMs(attempt) {
   return Math.min(BACKOFF_BASE_MS * 2 ** attempt, BACKOFF_CAP_MS);

@@ -566,7 +566,7 @@ html[dir="rtl"] .app-main {
     /* Keep the status-bar inset (shorthand above would zero it) and
        grow the bar instead of covering its content. */
     padding-top: env(safe-area-inset-top);
-    height: calc(54px + env(safe-area-inset-top));
+    height: calc(var(--topbar-height) + env(safe-area-inset-top));
   }
 
   .topbar-date {

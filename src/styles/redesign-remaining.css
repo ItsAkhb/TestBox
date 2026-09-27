@@ -217,9 +217,14 @@
 
 .settings-nav {
   position: sticky;
-  /* Sit directly under the sticky TopBar (60px / 54px ≤768). */
-  top: var(--topbar-height);
-  z-index: calc(var(--z-sticky) + 1);
+  /* Sit exactly at the sticky TopBar's bottom edge: the bar's real
+     height is calc(var(--topbar-height) + env(safe-area-inset-top)) —
+     matching that formula keeps the nav clear of the bar on notched
+     devices instead of tucking under it (spec #7). */
+  top: calc(var(--topbar-height) + env(safe-area-inset-top));
+  /* Below the TopBar (z-sticky) so the two layers never paint over
+     each other; still above static page content. */
+  z-index: calc(var(--z-sticky) - 1);
   display: flex;
   gap: 6px;
   margin: 0 0 16px;
@@ -271,7 +276,7 @@
 
 .settings-section[id],
 .settings-danger[id] {
-  scroll-margin-top: calc(var(--topbar-height) + 64px);
+  scroll-margin-top: calc(var(--topbar-height) + env(safe-area-inset-top) + 64px);
 }
 
 .settings-section[id]:focus {

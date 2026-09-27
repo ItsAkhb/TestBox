@@ -197,6 +197,14 @@
   --z-tooltip: 1200;
 }
 
+/* The TopBar shrinks to 54px on tablet/mobile (see layout.css) — the
+   token drives every sticky offset that must sit under it. */
+@media (max-width: 768px) {
+  :root {
+    --topbar-height: 54px;
+  }
+}
+
 
 /* =========================================================
    Dark Theme — warm charcoal, not pure black

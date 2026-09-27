@@ -27,6 +27,21 @@ import { useAuth } from "./context/AuthContext";
 
 import "./App.css";
 
+// Single source of truth for the post-auth UI transition: whenever a
+// session exists while an auth screen is showing (OAuth callback via
+// testbox:// or Android intent, restored WebView hash, email login,
+// cold start with a saved session), route to the authenticated shell.
+// Declarative — no timers, no duplicate navigation systems.
+function RequireLoggedOut({ children }) {
+  const { session } = useAuth();
+
+  if (session) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
+
 function App() {
   const { loading } = useAuth();
 
@@ -60,8 +75,22 @@ function App() {
             <Route path="/account" element={<Navigate to="/settings" replace />} />
           </Route>
 
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
+          <Route
+            path="/login"
+            element={
+              <RequireLoggedOut>
+                <Login />
+              </RequireLoggedOut>
+            }
+          />
+          <Route
+            path="/signup"
+            element={
+              <RequireLoggedOut>
+                <Signup />
+              </RequireLoggedOut>
+            }
+          />
         </Routes>
       </ErrorBoundary>
     </>

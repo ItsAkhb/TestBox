@@ -13,12 +13,30 @@ let mainWindow = null;
 let tray = null;
 let quitRequested = false;
 
+// Deterministic auth-callback delivery: the URL is queued until the
+// renderer has finished loading (preload has subscribed to the channel
+// by then) instead of guessing with fixed timers. The renderer-side
+// preload buffer then covers the remaining gap until React mounts.
+let rendererReady = false;
+let queuedAuthUrl = null;
+
 function sendAuthCallbackToRenderer(rawUrl) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   try {
     mainWindow.webContents.send("testbox:auth-callback", rawUrl);
   } catch {
     // renderer not ready yet — user can retry sign-in
+  }
+}
+
+function deliverAuthCallbackToRenderer(rawUrl) {
+  if (!rawUrl) return;
+  const windowReady =
+    rendererReady && mainWindow && !mainWindow.isDestroyed();
+  if (windowReady) {
+    sendAuthCallbackToRenderer(rawUrl);
+  } else {
+    queuedAuthUrl = rawUrl;
   }
 }
 
@@ -106,6 +124,7 @@ function destroyTray() {
 }
 
 function createWindow() {
+  rendererReady = false;
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -139,6 +158,20 @@ function createWindow() {
     return { action: "deny" };
   });
 
+  // Preload has subscribed to the auth-callback channel before this
+  // fires — a queued deep link can be delivered with no timing guess.
+  mainWindow.webContents.on("did-start-loading", () => {
+    rendererReady = false;
+  });
+  mainWindow.webContents.on("did-finish-load", () => {
+    rendererReady = true;
+    if (queuedAuthUrl) {
+      const url = queuedAuthUrl;
+      queuedAuthUrl = null;
+      sendAuthCallbackToRenderer(url);
+    }
+  });
+
   if (DEV_SERVER_URL) {
     mainWindow.loadURL(DEV_SERVER_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });
@@ -160,6 +193,7 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+    rendererReady = false;
   });
 }
 
@@ -190,7 +224,7 @@ function extractAuthUrlFromArgv(argv) {
 app.on("open-url", (event, url) => {
   event.preventDefault();
   showMainWindow();
-  sendAuthCallbackToRenderer(url);
+  deliverAuthCallbackToRenderer(url);
 });
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -200,10 +234,9 @@ if (!gotSingleInstanceLock) {
   app.on("second-instance", (_event, argv) => {
     const authUrl = extractAuthUrlFromArgv(argv);
     showMainWindow();
-    if (authUrl) {
-      // Give the window a beat to finish loading before IPC send.
-      setTimeout(() => sendAuthCallbackToRenderer(authUrl), 400);
-    }
+    // Queued until did-finish-load if the window is still loading —
+    // delivered immediately when it is already ready. No timing guess.
+    deliverAuthCallbackToRenderer(authUrl);
   });
 }
 
@@ -214,8 +247,9 @@ app.whenReady().then(() => {
   // Cold-start deep link: testbox://auth/callback?code=... on Windows
   const coldStartAuthUrl = extractAuthUrlFromArgv(process.argv);
   createWindow();
-  if (coldStartAuthUrl && mainWindow) {
-    setTimeout(() => sendAuthCallbackToRenderer(coldStartAuthUrl), 600);
+  if (coldStartAuthUrl) {
+    // Queued; flushed by the did-finish-load handler above.
+    deliverAuthCallbackToRenderer(coldStartAuthUrl);
   }
 
   app.on("activate", () => {

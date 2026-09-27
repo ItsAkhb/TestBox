@@ -188,6 +188,17 @@ const translations = {
     "exam.pagination.page": "صفحه",
     "exam.pagination.of": "از",
 
+    // Exam pages navigator (large-exam jump) + last answered entry
+    "exam.pages.title": "صفحات",
+    "exam.pages.hint": "پرش مستقیم به هر صفحه از سوالات",
+    "exam.pages.page": "صفحه",
+    "exam.pages.range": "سوالات {from}–{to}",
+    "exam.pages.current": "صفحه فعلی",
+    "exam.pages.go": "رفتن به صفحه {page}، سوالات {from} تا {to}",
+    "exam.pages.empty": "سوالی برای نمایش وجود ندارد",
+    "exam.lastAnswered": "رفتن به آخرین سوال پاسخ‌داده‌شده",
+    "exam.lastAnswered.none": "هنوز سوالی پاسخ داده نشده است",
+
     // Exam start
     "exam.start.title": "شروع آزمون",
     "exam.start.duration": "مدت زمان",
@@ -689,6 +700,17 @@ const translations = {
     "exam.pagination.next": "Next →",
     "exam.pagination.page": "Page",
     "exam.pagination.of": "of",
+
+    // Exam pages navigator (large-exam jump) + last answered entry
+    "exam.pages.title": "Pages",
+    "exam.pages.hint": "Jump straight to any page of questions",
+    "exam.pages.page": "Page",
+    "exam.pages.range": "Questions {from}–{to}",
+    "exam.pages.current": "Current page",
+    "exam.pages.go": "Go to page {page}, questions {from} to {to}",
+    "exam.pages.empty": "No questions to display",
+    "exam.lastAnswered": "Go to last answered question",
+    "exam.lastAnswered.none": "No answered questions yet",
 
     // Exam start
     "exam.start.title": "Start Exam",

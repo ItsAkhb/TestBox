@@ -163,12 +163,50 @@ test("auth delivery: main forwards deep links from open-url, second-instance, an
   assert.ok(source.includes('app.on("open-url"'), "macOS/Linux-style open-url handled");
   assert.ok(source.includes('app.on("second-instance"'), "running-instance deep link handled");
   assert.ok(
-    source.includes("setTimeout(() => sendAuthCallbackToRenderer(authUrl), 400)"),
-    "second-instance callback forwarded after the renderer settles"
+    source.includes("deliverAuthCallbackToRenderer(authUrl)"),
+    "second-instance deep link goes through the queue-or-send helper"
   );
   assert.ok(
-    source.includes("setTimeout(() => sendAuthCallbackToRenderer(coldStartAuthUrl), 600)"),
-    "cold-start argv callback forwarded after boot"
+    source.includes("deliverAuthCallbackToRenderer(coldStartAuthUrl)"),
+    "cold-start argv deep link goes through the queue-or-send helper"
+  );
+  assert.ok(
+    source.includes('mainWindow.webContents.on("did-finish-load"'),
+    "queued callback flushed when the renderer finishes loading"
+  );
+  assert.ok(
+    !source.includes("setTimeout(() => sendAuthCallbackToRenderer"),
+    "no fixed-timer callback delivery remains"
+  );
+});
+
+test("auth delivery: post-auth UI transition is declarative and loading can never hang", async () => {
+  const app = await read("../App.jsx");
+  assert.ok(app.includes("RequireLoggedOut"), "auth screens wrapped in a session guard");
+  assert.ok(
+    app.includes('path="/login"') && app.includes("<RequireLoggedOut>"),
+    "login route is guarded"
+  );
+  assert.ok(
+    app.includes('path="/signup"') && app.includes("<RequireLoggedOut>"),
+    "signup route is guarded"
+  );
+  assert.ok(
+    app.includes('<Navigate to="/" replace />'),
+    "authenticated session routes to the authenticated shell"
+  );
+
+  const auth = await read("../context/AuthContext.jsx");
+  const finallyAt = auth.indexOf("} finally {");
+  const loadingAt = auth.indexOf("setLoading(false)");
+  assert.ok(finallyAt !== -1, "loadSession resolves loading in a finally block");
+  assert.ok(
+    finallyAt < loadingAt,
+    "setLoading(false) lives inside finally — a rejected getSession() cannot strand the boot spinner"
+  );
+  assert.ok(
+    auth.includes('window.addEventListener("focus"'),
+    "cancelled OAuth recovers on focus (button re-enabled without a callback)"
   );
 });
 

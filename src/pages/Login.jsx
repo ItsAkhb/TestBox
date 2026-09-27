@@ -283,6 +283,8 @@ function Login() {
             {t("auth.password")}
           </label>
 
+          <div className="auth-password-wrap">
+
 
 
 
@@ -360,6 +362,8 @@ function Login() {
             <Icon name={showPassword ? "eyeOff" : "eye"} size={16} />
 
           </button>
+
+          </div>
 
 
 

@@ -167,40 +167,52 @@ export function AuthProvider({
 
 
     async function loadSession() {
-      const {
-        data,
-        error,
-      } =
-        await supabase.auth.getSession();
+      try {
+        const {
+          data,
+          error,
+        } =
+          await supabase.auth.getSession();
 
 
-      if (error) {
-        console.error(
-          "Failed to load auth session",
-          error
-        );
-      }
-
-
-      const currentSession =
-        data?.session ?? null;
-
-
-      if (mounted) {
-        setSession(
-          currentSession
-        );
-
-        setStorageUser(
-          currentSession?.user?.id ??
-          readLastUserId() ?? null
-        );
-
-        if (currentSession?.user?.id) {
-          writeLastUserId(currentSession.user.id);
+        if (error) {
+          console.error(
+            "Failed to load auth session",
+            error
+          );
         }
 
-        setLoading(false);
+
+        const currentSession =
+          data?.session ?? null;
+
+
+        if (mounted) {
+          setSession(
+            currentSession
+          );
+
+          setStorageUser(
+            currentSession?.user?.id ??
+            readLastUserId() ?? null
+          );
+
+          if (currentSession?.user?.id) {
+            writeLastUserId(currentSession.user.id);
+          }
+        }
+      } catch (err) {
+        // A rejected getSession() must not strand the app on the
+        // loading screen — boot continues with no live session (the
+        // offline guard above still preserves cached identity).
+        console.error(
+          "Failed to load auth session",
+          err
+        );
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
     }
 
@@ -329,14 +341,31 @@ export function AuthProvider({
       });
       if (typeof off === "function") unsubscribers.push(off);
       // Drain a callback that arrived while the renderer was still
-      // booting: main.cjs forwards the deep link on a timer, so the
-      // IPC can beat React mount — the preload buffers it until this
-      // pull consumes it exactly once.
+      // booting: main.cjs queues the deep link until did-finish-load,
+      // so the IPC can beat React mount — the preload buffers it until
+      // this pull consumes it exactly once.
       if (typeof window.testboxDesktop.getPendingAuthUrl === "function") {
         const pending = window.testboxDesktop.getPendingAuthUrl();
         if (pending) finishCallback(pending);
       }
     }
+
+    // Cancelled flow recovery: the user closed the external browser
+    // (or the Custom Tab) and came back WITHOUT a callback URL. Re-enable
+    // the button on the next focus/visibility — pure lifecycle, no timers
+    // or polling. A successful callback resets the flag anyway in
+    // finishCallback, so this can never strand a real sign-in.
+    const handleReturnWithoutCallback = () => {
+      if (!cancelled && !lastCallbackUrl) {
+        setGoogleLoading(false);
+      }
+    };
+    window.addEventListener("focus", handleReturnWithoutCallback);
+    document.addEventListener("visibilitychange", handleReturnWithoutCallback);
+    unsubscribers.push(() => {
+      window.removeEventListener("focus", handleReturnWithoutCallback);
+      document.removeEventListener("visibilitychange", handleReturnWithoutCallback);
+    });
 
     return () => {
       cancelled = true;

@@ -478,6 +478,16 @@
   color: var(--danger);
 }
 
+.exam-actions button:disabled,
+.exam-list-card:hover .exam-actions button:disabled,
+.exam-actions button:disabled:hover {
+  cursor: default;
+  transform: none;
+  opacity: 0.45;
+  background: transparent;
+  color: var(--muted);
+}
+
 
 /* =========================================================
    Modal

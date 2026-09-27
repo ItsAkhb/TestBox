@@ -1762,3 +1762,31 @@ test("pull with cloud completed still wins over local in_progress (finish is ter
   await cloud.syncCloudToLocal("tombstone-user");
   assert.equal(sandbox.getExamData(20).examState?.status, "completed");
 });
+
+test("sync watchdog: authenticated user syncs every 60s with one timer and in-flight guard", async () => {
+  const source = await readFile(
+    new URL("../components/CloudSyncManager.jsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.ok(
+    /const WORK_CHECK_INTERVAL_MS = 60 \* 1000;/.test(source),
+    "periodic reconcile interval is 60 seconds (spec #4)"
+  );
+
+  const setIntervalCalls = source.match(/setInterval\(/g) ?? [];
+  assert.equal(setIntervalCalls.length, 1, "exactly one periodic timer (no duplicates)");
+
+  assert.ok(
+    source.includes("clearInterval(interval)"),
+    "timer cleaned up when the provider unmounts or the user signs out"
+  );
+  assert.ok(
+    /if \(stopped \|\| !user \|\| syncingRef\.current\) return;/.test(source),
+    "in-flight guard: a tick never launches a second concurrent sync"
+  );
+  assert.ok(
+    source.includes("}, [user]);"),
+    "interval lifecycle is bound to the authenticated user"
+  );
+});

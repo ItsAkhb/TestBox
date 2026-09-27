@@ -42,6 +42,8 @@ import useStopwatch from "../hooks/useStopwatch";
 import { useSession } from "../context/SessionContext";
 import ExamTimer from "../components/exam/ExamTimer";
 import QuestionNavigator from "../components/exam/QuestionNavigator";
+import PagesNavigator from "../components/exam/PagesNavigator";
+import { QUESTIONS_PER_PAGE } from "../services/examNav";
 import Modal from "../components/ui/Modal";
 import Icon from "../components/ui/Icon";
 import QuestionTagPicker from "../components/exam/QuestionTagPicker";
@@ -55,8 +57,6 @@ const choices = [
   "3",
   "4",
 ];
-
-const QUESTIONS_PER_PAGE = 100;
 
 function getInitialExam(id) {
   const exams = getExams();
@@ -181,6 +181,7 @@ function ExamContent({ id }) {
   ] = useState(1);
 
   const [showNavigator, setShowNavigator] = useState(false);
+  const [showPages, setShowPages] = useState(false);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
 
   // Per-question tag picker.
@@ -1246,6 +1247,7 @@ function ExamContent({ id }) {
 
   function jumpToQuestion(questionNumber) {
     setShowNavigator(false);
+    setShowPages(false);
     setCurrentQuestion(questionNumber);
 
     const questionIndex =
@@ -1452,6 +1454,18 @@ function ExamContent({ id }) {
             aria-expanded={showNavigator}
           >
             <Icon name="grid" size={18} />
+          </button>
+
+          <button
+            type="button"
+            className="focusbar-nav"
+            onClick={() => setShowPages(true)}
+            aria-label={t("exam.pages.title")}
+            title={t("exam.pages.title")}
+            aria-haspopup="dialog"
+            aria-expanded={showPages}
+          >
+            <Icon name="list" size={18} />
           </button>
 
           <button
@@ -2203,6 +2217,14 @@ function ExamContent({ id }) {
         answers={answers}
         unresolved={unresolvedList}
         currentQuestion={currentQuestion}
+        onJump={jumpToQuestion}
+      />
+
+      <PagesNavigator
+        open={showPages}
+        onClose={() => setShowPages(false)}
+        questionNumbers={questionNumbers}
+        currentPage={currentPage}
         onJump={jumpToQuestion}
       />
 
