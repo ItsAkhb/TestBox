@@ -115,7 +115,19 @@ Never commit environment files or private keys to the repository.
 
 ## Current Status
 
-**v2.2.0-beta.2 released.**
+**v2.2.0-beta.3 released.**
+
+What's new in v2.2.0-beta.3 (sign-in reliability + exam navigation):
+
+* **Google sign-in never lands on a blank or stuck page** — the OAuth return URL is queued until the Electron renderer is ready (fixed timers removed), a failed session load always clears the loading state, and a cancelled sign-in resets the button the next time the window regains focus
+* **Signed-in users can't bounce back to Login** — auth routes redirect an active session into the app, so a restored `#/login` hash (Android task restore, Windows relaunch) is a no-op
+* **Persian typing on Android stays intact** — the WebView input-capture bypass that dropped IME composition is disabled, so typing in answers/notes no longer resets the field
+* **Auto-sync every 60 seconds** — one timer with an in-flight guard drives the background sync heartbeat
+* **Tags start collapsed** — Tags page sections open folded for a clean first glance
+* **Password eye stays inside its field** — Login/Signup input and toggle share one wrapper (no overflow on narrow screens)
+* **Settings menu lines up with the real TopBar** — sticky header height and safe-area insets match on desktop and mobile
+* **Pages navigator for big exams** — a new focus-bar button opens a page-grid modal (100 questions per page, current page marked, full keyboard/AT labels) for instant jumps in 1000+-question exams
+* **Jump back to your last answered question** — each exam card gets a clock button that deep-links to the highest answered question, with a disabled state when nothing is answered yet
 
 What's new in v2.2.0-beta.2 (stabilization before leaving beta):
 
