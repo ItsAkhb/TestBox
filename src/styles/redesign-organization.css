@@ -392,6 +392,19 @@
   margin-bottom: 18px;
 }
 
+/* v2.2.0 §2 — explicit manual-order edit session controls */
+.folders-order-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folders-order-actions .primary-button,
+.folders-order-actions .secondary-button {
+  padding: 7px 14px;
+  font-size: var(--text-sm, 13px);
+}
+
 .exam-toolbar {
   margin-bottom: 14px;
 }

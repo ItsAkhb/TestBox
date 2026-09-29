@@ -1,0 +1,162 @@
+============================================================
+TestBox v2.2.0 — Stable Release
+============================================================
+
+TestBox is your offline-first exam workbook: create folders and
+subjects, build practice exams, answer with a timer, and review
+results — on Windows, Android, and the web. v2.2.0 consolidates
+five beta cycles into one stable release.
+
+------------------------------------------------------------
+New features
+------------------------------------------------------------
+
+* Folder sorting views — sort folders by name (Persian/numeric
+  aware), creation date, last update, or a custom manual order.
+* List or card view — switch between a compact list and a card
+  grid; the choice persists across reloads.
+* Multi-subject folders — attach more than one subject to a
+  folder, with chips shown on cards and list rows, a one-click
+  subject filter, and inline subject editing from a list row.
+* Manual ordering with an explicit edit mode — reorder folders
+  and exams with a clear Edit / Save / Cancel flow: nothing
+  changes until you save, and Cancel restores the previous order.
+* Pages navigator for big exams — jump across 100-question pages
+  in exams with 1000+ questions via a full page-grid modal.
+* Jump to the last answered question directly from an exam card.
+* Custom question tags — tag picker shared between the Tags page
+  and exams, with grouping and label helpers.
+* Theme system — light / dark / system preference from a single
+  source of truth, with cross-tab synchronization.
+* Auto-sync heartbeat — background cloud sync runs every 60
+  seconds with an in-flight guard.
+
+------------------------------------------------------------
+Major improvements
+------------------------------------------------------------
+
+* Sign-in reliability — the OAuth return URL is buffered until
+  the app is ready, so Google sign-in never lands on a blank or
+  stuck page; active sessions can't bounce back to the login
+  screen; failed session loads always clear their loading state.
+* Navigation never leaves a page blank — every client-side route
+  change enters via a CSS animation, so content is always visible.
+* Android JSON backup now reaches a real file through the system
+  file picker (SAF), with honest success/error reporting.
+* Persian-friendly name inputs everywhere — right-to-left text
+  direction, 16px touch fonts (no Android auto-zoom), and modals
+  that stay visible above the keyboard.
+* One license, clearly stated — TestBox is source-available for
+  non-commercial use.
+
+------------------------------------------------------------
+UI redesign changes
+------------------------------------------------------------
+
+* The full redesigned interface ships stable: Persian/English ×
+  light/dark × desktop/mobile, with shared design tokens.
+* Reworked TopBar, sidebar, and mobile navigation with sticky
+  headers, safe-area insets, and compact mobile weather status.
+* Cleaner pages: dashboard, organization pages, exam focus bar,
+  calendar, results, and settings all refined for the redesign.
+* Long folder names in card view now wrap up to three lines
+  instead of being cut off mid-word.
+
+------------------------------------------------------------
+Sync improvements
+------------------------------------------------------------
+
+* The full attached-subjects array now syncs to the cloud — a
+  folder's complete subject list follows your account across
+  devices (previously only the primary subject synced).
+* Capability-gated migration — each table/column activates sync
+  only when it exists, so an incomplete schema can never damage
+  local data.
+* Upload-first sync with dirty tracking: local edits are queued
+  offline and flushed when the connection returns.
+* Sync status lives in the top bar with a one-click manual sync.
+
+------------------------------------------------------------
+Offline improvements
+------------------------------------------------------------
+
+* Offline-first engine — folders, subjects, exams, answers,
+  tags, and statistics all work with no connection.
+* Global offline prompt with capability-gated auth flows, so
+  sign-in features degrade gracefully instead of failing.
+
+------------------------------------------------------------
+Folder improvements
+------------------------------------------------------------
+
+* List view is now the default for folders (card view remains
+  one click away and remembers your choice).
+* Sort mode, view mode, and subject filter persist per user.
+* Manual folder order is protected by the edit-mode flow:
+  reorder freely, then Save to apply — or Cancel to discard.
+* Subject chips and inline subject editing without leaving the
+  folder list.
+
+------------------------------------------------------------
+Exam improvements
+------------------------------------------------------------
+
+* Each folder remembers its own exam sort mode, including a
+  custom manual order with an explicit edit / save / cancel
+  flow (arrow buttons or drag in list view).
+* Practice stopwatch and study-time statistics.
+* Scoring with custom numbering, partial answer keys, and
+  negative marking.
+* Notes, marked questions, and page navigation built for large
+  question banks.
+
+------------------------------------------------------------
+Mobile improvements
+------------------------------------------------------------
+
+* Google sign-in opens in a native Custom Tab on Android when
+  the Google app is installed.
+* Persian typing in answers and notes stays intact (no IME
+  composition resets).
+* Status-bar clearance via safe-area insets; weather stays
+  visible in the TopBar on small screens.
+* Hardware back button navigates history first, exits at the
+  root.
+* New adaptive launcher icons on TestBox teal.
+
+------------------------------------------------------------
+Branding changes
+------------------------------------------------------------
+
+* New master logo system in public/brand/ — crafted wordmark,
+  "Learn · Practice · Grow" lockups, answer-sheet mark, and
+  dark variants — used across auth screens, favicon, and app
+  icons.
+
+------------------------------------------------------------
+Bug fixes
+------------------------------------------------------------
+
+* Route transitions can no longer wedge pages at zero opacity.
+* Android backup export no longer reports a false success when
+  the file picker is cancelled.
+* OAuth codes arriving during Windows boot are never dropped.
+* A restored #/login hash (Android task restore, Windows
+  relaunch) no longer logs an active user out of the app.
+* Password visibility toggle no longer overflows narrow inputs.
+* Settings header now matches the real TopBar height.
+
+------------------------------------------------------------
+Quality
+------------------------------------------------------------
+
+* 248 automated unit tests passing.
+* Lint at baseline (no regressions).
+* Verified end-to-end: account creation, login, folder/subject/
+  exam flows, manual ordering, cloud sync of the full subject
+  list across fresh devices, and production builds for web,
+  Windows, and Android.
+
+Installers: TestBox-Setup-2.2.0.exe (Windows) and
+TestBox-2.2.0.apk (Android) are attached to this release.
+Web version: https://itsakhb.github.io/TestBox/

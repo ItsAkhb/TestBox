@@ -115,7 +115,14 @@ Never commit environment files or private keys to the repository.
 
 ## Current Status
 
-**v2.2.0-beta.5 released.**
+**v2.2.0 stable released.**
+
+What's new in v2.2.0 (stable release):
+
+* **Folders open in list view by default** — the faster, compact layout now leads; card view is still one click away and remembers your choice
+* **Manual ordering has a real edit mode** — for both folder order and per-folder exam order: press "Edit order", move items with arrows or drag, then **Save order** to persist it or **Cancel** to discard; while editing, sort/view switching is locked and unsaved changes are dropped if you leave the page
+* **Long folder names stay readable** — card-view names wrap over up to three lines instead of being cut off mid-word
+* **Complete subject lists sync to the cloud** — a folder's full attached-subjects array now follows your account across devices (previously only the primary subject synced); removing a subject propagates too
 
 What's new in v2.2.0-beta.5 (navigation data state and Android backup export):
 

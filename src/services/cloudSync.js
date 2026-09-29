@@ -123,6 +123,7 @@ export async function probeSchemaCapabilities({ force = false } = {}) {
 
   const [
     foldersSubjectId,
+    foldersSubjectIds,
     foldersRev,
     examsRev,
     examsType,
@@ -137,6 +138,7 @@ export async function probeSchemaCapabilities({ force = false } = {}) {
     examQuestionsTagIds,
   ] = await Promise.all([
     columnExists("folders", "subject_id"),
+    columnExists("folders", "subject_ids"),
     columnExists("folders", "rev"),
     columnExists("exams", "rev"),
     columnExists("exams", "type"),
@@ -152,6 +154,7 @@ export async function probeSchemaCapabilities({ force = false } = {}) {
   ]);
 
   schemaCapabilities.foldersSubjectId = foldersSubjectId;
+  schemaCapabilities.foldersSubjectIds = foldersSubjectIds;
   schemaCapabilities.foldersRev = foldersRev;
   schemaCapabilities.examsRev = examsRev;
   schemaCapabilities.examsType = examsType;
@@ -337,6 +340,16 @@ async function syncFolder(
     // Explicitly write NULL when unassigned — omitting the key would
     // leave the previous cloud value stale (unassign never propagated).
     row.subject_id = folder.subjectId ?? null;
+  }
+  if (schemaCapabilities.foldersSubjectIds) {
+    // Full attached-subjects array (v2.2.0 §4). Empty/missing writes
+    // NULL for the same stale-unassign reason as subject_id above;
+    // storage.js always mirrors subjectIds[0] into subjectId, so both
+    // columns stay consistent.
+    row.subject_ids =
+      Array.isArray(folder.subjectIds) && folder.subjectIds.length > 0
+        ? folder.subjectIds
+        : null;
   }
   if (schemaCapabilities.foldersRev) {
     row.rev = (Number(folder.rev) || 0) + 1;
@@ -836,6 +849,7 @@ async function getCloudFolders(
 ) {
   const folderColumns = ["id", "name", "created_at"];
   if (schemaCapabilities.foldersSubjectId) folderColumns.push("subject_id");
+  if (schemaCapabilities.foldersSubjectIds) folderColumns.push("subject_ids");
   if (schemaCapabilities.foldersRev) folderColumns.push("rev");
 
   const {
@@ -1781,12 +1795,31 @@ function mergeFolders(localFolders, incomingCloudFolders, dirtyState, race = {})
       }
     }
 
+    // v2.2.0 §4: the full attached-subjects array is authoritative in
+    // this (cloud-wins) branch whenever the cloud row carries the
+    // column; legacy rows (column absent / NULL) keep their local
+    // array and fall through to the singular subject_id merge below.
+    const adoptSubjectIds =
+      schemaCapabilities.foldersSubjectIds &&
+      "subject_ids" in cloudFolder;
+    const nextSubjectIds = adoptSubjectIds
+      ? Array.isArray(cloudFolder.subject_ids)
+        ? cloudFolder.subject_ids
+        : [] // explicit unassign propagated as NULL by the push
+      : folder.subjectIds;
+
     merged.push({
       ...folder,
       name: cloudFolder.name ?? folder.name,
-      subjectId:
-        schemaCapabilities.foldersSubjectId &&
-        cloudFolder.subject_id != null
+      subjectIds: nextSubjectIds,
+      // Keep subjectId mirroring subjectIds[0] (storage.js convention)
+      // whenever the array is adopted; otherwise the legacy merge rules.
+      subjectId: adoptSubjectIds
+        ? nextSubjectIds.length > 0
+          ? nextSubjectIds[0]
+          : null
+        : schemaCapabilities.foldersSubjectId &&
+            cloudFolder.subject_id != null
           ? cloudFolder.subject_id
           : folder.subjectId ?? null,
       createdAt: cloudFolder.created_at ?? folder.createdAt,
@@ -1806,13 +1839,22 @@ function mergeFolders(localFolders, incomingCloudFolders, dirtyState, race = {})
   const localIds = new Set(localFolders.map((f) => String(f.id)));
   cloudFolders.forEach((folder) => {
     if (!localIds.has(String(folder.id))) {
+      // v2.2.0 §4 — prefer the full array; fall back to the legacy
+      // singular subject_id so pre-migration rows still attach.
+      const cloudOnlySubjectIds =
+        schemaCapabilities.foldersSubjectIds &&
+        Array.isArray(folder.subject_ids)
+          ? folder.subject_ids
+          : folder.subject_id != null
+            ? [folder.subject_id]
+            : [];
       merged.push({
         id: folder.id,
         name: folder.name,
+        subjectIds: cloudOnlySubjectIds,
         subjectId:
-          schemaCapabilities.foldersSubjectId &&
-          folder.subject_id != null
-            ? folder.subject_id
+          cloudOnlySubjectIds.length > 0
+            ? cloudOnlySubjectIds[0]
             : null,
         createdAt: folder.created_at,
         ...(folder.updated_at != null

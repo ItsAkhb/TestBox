@@ -1,11 +1,11 @@
 # Packaging: Windows (Electron) & Android (Capacitor)
 
-TestBox v2.2.0-beta.5 ships three ways from one codebase:
+TestBox v2.2.0 ships three ways from one codebase:
 
 | Platform | Wrapper | Output | Config |
 |---|---|---|---|
 | Web | none (Vite static site) | `dist/` → GitHub Pages | `vite.config.js` |
-| Windows | Electron 44 | `release/TestBox-Setup-2.2.0-beta.5.exe` (this release ships the NSIS installer only; the portable target stays in the config for future builds) | `electron-builder.json5` |
+| Windows | Electron 44 | `release/TestBox-Setup-2.2.0.exe` (this release ships the NSIS installer only; the portable target stays in the config for future builds) | `electron-builder.json5` |
 | Android | Capacitor 7 | `android/app/build/outputs/apk/release/app-release.apk` | `capacitor.config.json` |
 
 ## Rationale
@@ -42,10 +42,10 @@ npm run dist:win       # build:packaged + electron-builder --win
 
 Outputs in `release/` (gitignored):
 
-- `TestBox-Setup-2.2.0-beta.5.exe` — NSIS installer x64 (user-chosen install dir,
+- `TestBox-Setup-2.2.0.exe` — NSIS installer x64 (user-chosen install dir,
   desktop + Start-menu shortcuts)
-- `TestBox-Portable-2.2.0-beta.5.exe` — standalone portable x64 (built only when
-  the portable target is requested; not shipped in v2.2.0-beta.5)
+- `TestBox-Portable-2.2.0.exe` — standalone portable x64 (built only when
+  the portable target is requested; not shipped in v2.2.0)
 
 Details:
 
@@ -128,6 +128,7 @@ piece activates automatically once present:
 
 ```sql
 alter table folders add column if not exists subject_id text;
+alter table folders add column if not exists subject_ids jsonb;  -- v2.2.0: full attached-subjects array
 alter table exams add column if not exists type text default 'practice';
 alter table exams add column if not exists timer_duration int;
 alter table exams add column if not exists answer_key jsonb;

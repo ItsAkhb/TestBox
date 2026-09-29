@@ -198,6 +198,14 @@ function Folder() {
   // the existing settings blob (each folder owns its own state — promt
   // §2). prefsVersion re-reads settings after a preference write.
   const [prefsVersion, setPrefsVersion] = useState(0);
+
+  // v2.2.0 §2 — the manual exam order is locked behind an explicit edit
+  // session. Reorders update only this in-memory buffer; settings are
+  // written by Save alone (Cancel or unmount discards), so normal
+  // browsing can never change the order.
+  const [examOrderEditing, setExamOrderEditing] = useState(false);
+  const [examOrderBuffer, setExamOrderBuffer] = useState(null);
+
   const examPrefs = useMemo(() => {
     let settings;
     try {
@@ -246,23 +254,68 @@ function Folder() {
   }
 
   // Canonical (all of this folder's exams, storage order) rebuilt at
-  // commit time so filtered/sorted views can't lose entries.
+  // commit time so filtered/sorted views can't lose entries. During an
+  // edit session the merge lands in the buffer; Save persists it.
   function commitExamOrder(newVisible) {
     const raw = getExams().filter(
       (exam) => String(exam.folderId) === String(id)
     );
-    const canonical = buildCustomOrder(raw, examPrefs.order);
+    const baseOrder =
+      examOrderEditing && Array.isArray(examOrderBuffer)
+        ? examOrderBuffer
+        : examPrefs.order;
+    const canonical = buildCustomOrder(raw, baseOrder);
     const merged = mergeVisibleOrder(
       canonical,
       exams.map((exam) => String(exam.id)),
       newVisible.map((exam) => String(exam.id))
     );
+    if (examOrderEditing) {
+      setExamOrderBuffer(merged);
+      return;
+    }
     const settings = getSettings() || {};
     const orders =
       settings.examOrders && typeof settings.examOrders === "object"
         ? settings.examOrders
         : {};
     saveExamPrefs({ examOrders: { ...orders, [id]: merged } });
+  }
+
+  function handleStartExamOrderEdit() {
+    // Fresh list (same source commitExamOrder uses) so the memoized
+    // folderExamList never flows into an unknown helper — React
+    // Compiler must be able to prove it stays untouched.
+    const raw = getExams().filter(
+      (exam) => String(exam.folderId) === String(id)
+    );
+    setExamOrderBuffer(buildCustomOrder(raw, examPrefs.order));
+    setExamOrderEditing(true);
+  }
+
+  function handleSaveExamOrderEdit() {
+    const raw = getExams().filter(
+      (exam) => String(exam.folderId) === String(id)
+    );
+    const canonical = buildCustomOrder(
+      raw,
+      examOrderBuffer && Array.isArray(examOrderBuffer)
+        ? examOrderBuffer
+        : examPrefs.order
+    );
+    const settings = getSettings() || {};
+    const orders =
+      settings.examOrders && typeof settings.examOrders === "object"
+        ? settings.examOrders
+        : {};
+    saveExamPrefs({ examOrders: { ...orders, [id]: canonical } });
+    setExamOrderEditing(false);
+    setExamOrderBuffer(null);
+  }
+
+  function handleCancelExamOrderEdit() {
+    setExamOrderEditing(false);
+    setExamOrderBuffer(null);
   }
 
   function handleMoveExamOrder(exam, delta) {
@@ -293,10 +346,14 @@ function Folder() {
 
   // Sorted view over the raw list. Deliberately NOT a useMemo: the sort
   // is cheap (folder-sized), and the raw heavy list stays memoized above.
+  // While an edit session is open the in-memory buffer replaces the
+  // persisted order (promt §2).
   const exams = sortItems(
     [...folderExamList],
     examPrefs.mode,
-    examPrefs.order,
+    examOrderEditing && Array.isArray(examOrderBuffer)
+      ? examOrderBuffer
+      : examPrefs.order,
     locale
   );
 
@@ -837,7 +894,7 @@ function Folder() {
 
         <div className="exam-actions">
 
-          {examPrefs.mode === "custom" && (
+          {examPrefs.mode === "custom" && examOrderEditing && (
             <>
               <button
                 type="button"
@@ -1000,6 +1057,7 @@ function Folder() {
               className="folders-sort-select"
               value={examPrefs.mode}
               onChange={handleExamSortChange}
+              disabled={examOrderEditing}
               aria-label={t("folders.sort.label")}
             >
               {SORT_MODES.map((mode) => (
@@ -1011,9 +1069,42 @@ function Folder() {
           </label>
 
           {examPrefs.mode === "custom" && (
-            <span className="folders-sort-hint">
-              {t("folders.order.hint")}
-            </span>
+            <>
+              <div className="folders-order-actions">
+                {examOrderEditing ? (
+                  <>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={handleSaveExamOrderEdit}
+                    >
+                      {t("folders.order.save")}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleCancelExamOrderEdit}
+                    >
+                      {t("common.cancel")}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={handleStartExamOrderEdit}
+                  >
+                    {t("folders.order.edit")}
+                  </button>
+                )}
+              </div>
+
+              {examOrderEditing && (
+                <span className="folders-sort-hint">
+                  {t("folders.order.hint")}
+                </span>
+              )}
+            </>
           )}
         </div>
       )}
@@ -1046,7 +1137,7 @@ function Folder() {
 
         </div>
 
-      ) : examPrefs.mode === "custom" ? (
+      ) : examPrefs.mode === "custom" && examOrderEditing ? (
 
         <Reorder.Group
           as="div"

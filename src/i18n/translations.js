@@ -111,6 +111,8 @@ const translations = {
     "folders.order.up": "انتقال به بالا",
     "folders.order.down": "انتقال به پایین",
     "folders.order.hint": "برای جابه‌جایی بکشید یا از فلش‌ها استفاده کنید",
+    "folders.order.edit": "ویرایش ترتیب",
+    "folders.order.save": "ذخیره ترتیب",
     "folders.subjects.title": "دروس فولدر",
     "folders.subjects.edit": "ویرایش درس‌ها",
 
@@ -643,6 +645,8 @@ const translations = {
     "folders.order.up": "Move up",
     "folders.order.down": "Move down",
     "folders.order.hint": "Drag rows or use the arrows to reorder",
+    "folders.order.edit": "Edit order",
+    "folders.order.save": "Save order",
     "folders.subjects.title": "Folder subjects",
     "folders.subjects.edit": "Edit subjects",
 

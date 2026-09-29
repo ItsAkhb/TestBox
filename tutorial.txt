@@ -1,0 +1,342 @@
+============================================================
+TestBox — User Tutorial
+============================================================
+
+Welcome! This guide walks a new user through TestBox from the
+first launch to cloud sync and mobile usage. Follow the sections
+in order the first time; afterwards, jump to whatever you need.
+
+------------------------------------------------------------
+1. What is TestBox?
+------------------------------------------------------------
+
+TestBox is an offline-first exam workbook. It helps you:
+
+* Organize your courses into folders and subjects.
+* Build practice exams from your own questions.
+* Answer with an optional timer or stopwatch.
+* Review results, statistics, notes, and marked questions.
+* Keep everything on your device — and optionally sync it to
+  the cloud across Windows, Android, and the web.
+
+Everything works without an internet connection. An account is
+only needed for cloud sync.
+
+------------------------------------------------------------
+2. First launch
+------------------------------------------------------------
+
+When you open TestBox you land on the Home page. The layout is:
+
+* Top bar — search, sync status, account, and weather (mobile).
+* Sidebar (desktop) or bottom navigation (mobile) — Home,
+  Folders, Subjects, Tags, Calendar, Results, Settings.
+* Main area — the current page.
+
+Your data is created locally the moment you start. No account,
+no wizard, no waiting.
+
+------------------------------------------------------------
+3. Creating an account
+------------------------------------------------------------
+
+Accounts are optional and only used for cloud sync.
+
+1. Open the menu and choose Sign up (ساخت حساب).
+2. Enter your email and a password (at least 6 characters).
+3. Submit. The account is confirmed automatically — no
+   verification email is required.
+4. You return to the app already signed in.
+
+Your local data stays where it is; syncing begins when you use
+the sync button (see section 20).
+
+------------------------------------------------------------
+4. Login
+------------------------------------------------------------
+
+1. Open Sign in (ورود).
+2. Enter your email and password.
+3. Submit.
+
+If you are already signed in, the app keeps you signed in
+across restarts — a restored login link or deep link will not
+log you out. Signing out is done from Settings → "Sign out"
+(خروج از حساب).
+
+------------------------------------------------------------
+5. Creating folders
+------------------------------------------------------------
+
+Folders are your top-level organization (one per course, for
+example).
+
+1. Go to Folders.
+2. Press "New folder" (فولدر جدید).
+3. Type a name.
+4. Optionally attach subjects to it now (section 6).
+5. Save.
+
+Folders appear in the list. Open one to see and manage its
+exams.
+
+------------------------------------------------------------
+6. Adding subjects
+------------------------------------------------------------
+
+Subjects are labels like "Math" or "Physics" that you attach to
+folders and filter by.
+
+1. Go to Subjects.
+2. Press "New subject" (درس جدید).
+3. Type a name and save.
+
+To attach subjects to a folder, open the folder's subject
+editor (from the folder card, or the chip button on a list row)
+and tap the subject chips. A folder can have several subjects;
+the first one is its primary subject. Changes sync with your
+account.
+
+------------------------------------------------------------
+7. Creating exams
+------------------------------------------------------------
+
+1. Open a folder.
+2. Press the new-exam button.
+3. Enter the exam name and choose its type.
+4. Save.
+
+The exam card now appears in the folder. Use the folder's sort
+control to order exams by name, date, or your own manual order.
+
+------------------------------------------------------------
+8. Creating practice sessions
+------------------------------------------------------------
+
+Practice mode lets you answer questions at your own pace with
+immediate scoring:
+
+1. Open an exam.
+2. Choose practice mode.
+3. Answer question by question; save answers as you go.
+
+You can stop at any time — answers are stored locally and
+resumed when you return.
+
+------------------------------------------------------------
+9. Answering questions
+------------------------------------------------------------
+
+For each question you can:
+
+* Pick an option or type a free-text answer.
+* Add a note (your private comment for the question).
+* Mark it for later review (flag icon) — marked questions are
+  collected on the Marked page.
+* Attach tags for your own classification.
+
+Answers save automatically; there is no "submit" step inside a
+practice session.
+
+------------------------------------------------------------
+10. Timer
+------------------------------------------------------------
+
+Exams can run with a countdown timer:
+
+1. When starting a timed exam, set the duration (or use the
+   exam's saved duration).
+2. The timer shows remaining time in the focus bar.
+3. At zero the exam can auto-finish according to its settings.
+
+Stopwatch mode is also available for untimed practice, and
+study-time statistics accumulate from your sessions.
+
+------------------------------------------------------------
+11. Pages navigation
+------------------------------------------------------------
+
+Long exams are split into pages (100 questions per page):
+
+* Use the page arrows to move between pages.
+* For very large exams (1000+ questions), open the Pages
+  navigator (grid icon in the focus bar) to jump to any page in
+  one click; the current page is highlighted.
+
+------------------------------------------------------------
+12. Jumping to the last answered question
+------------------------------------------------------------
+
+On each exam card, the clock button deep-links to the highest
+question you have already answered, so a large exam resumes
+where you left off. The button is disabled when nothing is
+answered yet.
+
+------------------------------------------------------------
+13. Notes
+------------------------------------------------------------
+
+Every question has a notes field. Notes are saved with the
+question, sync to the cloud, and are visible while answering
+and during review. Use them for explanations, mnemonics, or
+reminders.
+
+------------------------------------------------------------
+14. Marked questions
+------------------------------------------------------------
+
+Flag any question while answering. The Marked page collects all
+flagged questions from an exam (or across exams) so you can
+review exactly the ones you were unsure about.
+
+------------------------------------------------------------
+15. Results
+------------------------------------------------------------
+
+After finishing an exam, the Results page shows:
+
+* Score according to the exam's scoring scheme (custom
+  numbering, partial answer keys, negative marking).
+* Correct / wrong / unanswered / unresolved counts.
+* A question-by-question review with your answers, notes, and
+  tags.
+
+Statistics pages add study-time and activity trends over days.
+
+------------------------------------------------------------
+16. Sorting folders
+------------------------------------------------------------
+
+On the Folders page, the sort dropdown offers:
+
+* Name (Persian/numeric aware), Created, Updated.
+* Custom — your own manual order (section 18).
+
+The choice is remembered per user across sessions.
+
+------------------------------------------------------------
+17. Card/List view
+------------------------------------------------------------
+
+Next to the sort dropdown, switch between:
+
+* List view — compact rows, fastest for many folders (default).
+* Card view — a grid with subject chips and richer details.
+
+The view persists across reloads. Long folder names in card
+view wrap over up to three lines instead of being cut off.
+
+------------------------------------------------------------
+18. Manual ordering
+------------------------------------------------------------
+
+Manual order works for both folders and exams and is protected
+by an explicit edit mode:
+
+1. Choose sort = Custom.
+2. Press "Edit order" (ویرایش ترتیب). Move items with the
+   arrow buttons (or drag in list view).
+3. Press "Save order" (ذخیره ترتیب) to apply — the order is
+   stored and becomes your custom order.
+4. Or press Cancel (لغو) to discard all changes; the previous
+   order stays exactly as it was.
+
+While edit mode is on, other toolbar actions (sort/view
+switching) are locked so your reorder session is never
+accidentally interrupted. Leaving the page without saving also
+discards unsaved changes.
+
+The same flow exists for exams inside a folder (per-folder exam
+order).
+
+------------------------------------------------------------
+19. Backup / export JSON
+------------------------------------------------------------
+
+Settings → Backup → Export downloads your entire dataset as a
+JSON file:
+
+* Web/Windows: dated file testbox-backup-YYYY-MM-DD.json.
+* Android: the system file picker opens (SAF); choose a
+  location and the JSON is written there. Cancelling the picker
+  cancels the export — nothing is reported as saved.
+
+Keep exported files somewhere safe; they are your full local
+copy.
+
+------------------------------------------------------------
+20. Sync between devices
+------------------------------------------------------------
+
+1. Sign in with the same account on each device.
+2. Press the sync button in the top bar (or wait for the
+   60-second automatic heartbeat).
+3. Status shows "syncing" then "saved" (ذخیره شد).
+
+Sync uploads your local changes first, then downloads cloud
+changes — folders, their full subject lists, subjects, exams,
+answers, tags, settings, and daily activity. Editing on device
+A and signing in on device B shows the same data after one
+sync. Data from other accounts is never visible to you (each
+account is isolated).
+
+------------------------------------------------------------
+21. Offline usage
+------------------------------------------------------------
+
+No connection? Keep working: creating and editing folders,
+subjects, exams, answers, notes, and tags all continue locally.
+An offline prompt tells you the state of the connection; the
+moment you are back online, queued changes upload on the next
+sync. Sign-in-related actions wait until you are online.
+
+------------------------------------------------------------
+22. Settings
+------------------------------------------------------------
+
+Settings includes:
+
+* Account — email, sign in/out.
+* Backup — export JSON (section 19).
+* Sync — status and manual sync.
+* Appearance — theme (section 23).
+* Language — Persian/English (section 24).
+* About — version and license.
+
+------------------------------------------------------------
+23. Theme
+------------------------------------------------------------
+
+Settings → Theme offers Light, Dark, or System. The choice is
+applied instantly, remembered, and synchronized across open
+windows/tabs. All pages, modals, and exam screens follow the
+theme.
+
+------------------------------------------------------------
+24. Language switching
+------------------------------------------------------------
+
+Settings → Language switches the whole interface between
+Persian (default) and English — menus, buttons, dialogs, and
+toasts all change immediately. The choice persists across
+restarts.
+
+------------------------------------------------------------
+25. Mobile usage
+------------------------------------------------------------
+
+On Android (and small screens):
+
+* Bottom navigation replaces the sidebar.
+* Modals stay above the keyboard; name inputs use a larger
+  touch font so Android does not zoom.
+* Persian typing in answers and notes works without resets.
+* The hardware back button follows your history and only exits
+  the app at the start page.
+* Google sign-in opens in a native Custom Tab when available.
+* JSON backup writes through the system file picker.
+* The TopBar clears the status bar and keeps the weather
+  visible.
+
+That's everything you need to run TestBox day to day. Happy
+studying — Learn · Practice · Grow.

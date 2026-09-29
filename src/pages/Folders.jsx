@@ -42,10 +42,12 @@ function readSortPref() {
 }
 
 function readViewPref() {
+  // v2.2.0: LIST is the default for users with no saved preference;
+  // an explicitly saved "card" keeps winning (promt §1).
   try {
-    return getSettings()?.folderView === "list" ? "list" : "card";
+    return getSettings()?.folderView === "card" ? "card" : "list";
   } catch {
-    return "card";
+    return "list";
   }
 }
 
@@ -87,6 +89,13 @@ function Folders() {
   const [folderView, setFolderView] = useState(readViewPref);
   const [folderOrder, setFolderOrder] = useState(readOrderPref);
 
+  // v2.2.0 §2: manual order is locked until the user starts an explicit
+  // edit session. Reorders stay in memory until Save; Cancel restores
+  // the snapshot and navigating away simply discards (state-only), so
+  // normal browsing can never change the order.
+  const [orderEditing, setOrderEditing] = useState(false);
+  const [orderSnapshot, setOrderSnapshot] = useState([]);
+
   const [renamingFolder, setRenamingFolder] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -126,7 +135,9 @@ function Folders() {
 
   // Persists a new visible sequence into the global custom order.
   // Hidden (filtered-out) folders keep their slots — reordering can
-  // only ever change ordering (promt §4).
+  // only ever change ordering (promt §4). While an edit session is
+  // open the merge only updates in-memory state (promt §2 — Save is
+  // what writes it to settings).
   function commitOrder(newVisible) {
     const canonical = buildCustomOrder(folders, folderOrder);
     const merged = mergeVisibleOrder(
@@ -135,7 +146,28 @@ function Folders() {
       newVisible.map((f) => String(f.id))
     );
     setFolderOrder(merged);
-    persistFolderPrefs({ folderOrder: merged });
+    if (!orderEditing) {
+      persistFolderPrefs({ folderOrder: merged });
+    }
+  }
+
+  function handleStartOrderEdit() {
+    setOrderSnapshot(folderOrder);
+    setOrderEditing(true);
+  }
+
+  function handleSaveOrderEdit() {
+    // Rebuild against current folders so ids created/deleted mid-edit
+    // are appended/pruned before the order is persisted.
+    const canonical = buildCustomOrder(folders, folderOrder);
+    setFolderOrder(canonical);
+    persistFolderPrefs({ folderOrder: canonical });
+    setOrderEditing(false);
+  }
+
+  function handleCancelOrderEdit() {
+    setFolderOrder(orderSnapshot);
+    setOrderEditing(false);
   }
 
   function handleMoveFolder(folder, delta) {
@@ -389,7 +421,7 @@ function Folders() {
   function actionButtons(folder, index) {
     return (
       <>
-        {folderSort === "custom" && (
+        {folderSort === "custom" && orderEditing && (
           <>
             <button
               type="button"
@@ -592,6 +624,7 @@ function Folders() {
               className="folders-sort-select"
               value={folderSort}
               onChange={handleSortChange}
+              disabled={orderEditing}
               aria-label={t("folders.sort.label")}
             >
               {SORT_MODES.map((mode) => (
@@ -601,6 +634,37 @@ function Folders() {
               ))}
             </select>
           </label>
+
+          {folderSort === "custom" && (
+            <div className="folders-order-actions">
+              {orderEditing ? (
+                <>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={handleSaveOrderEdit}
+                  >
+                    {t("folders.order.save")}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={handleCancelOrderEdit}
+                  >
+                    {t("common.cancel")}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleStartOrderEdit}
+                >
+                  {t("folders.order.edit")}
+                </button>
+              )}
+            </div>
+          )}
 
           <div
             className="view-toggle"
@@ -613,6 +677,7 @@ function Folders() {
               aria-pressed={folderView === "card"}
               aria-label={t("folders.view.cards")}
               title={t("folders.view.cards")}
+              disabled={orderEditing}
               onClick={() => handleViewChange("card")}
             >
               <Icon name="grid" size={16} />
@@ -623,6 +688,7 @@ function Folders() {
               aria-pressed={folderView === "list"}
               aria-label={t("folders.view.list")}
               title={t("folders.view.list")}
+              disabled={orderEditing}
               onClick={() => handleViewChange("list")}
             >
               <Icon name="list" size={16} />
@@ -689,7 +755,7 @@ function Folders() {
           </div>
         )
       ) : folderView === "list" ? (
-        folderSort === "custom" ? (
+        folderSort === "custom" && orderEditing ? (
           <Reorder.Group
             as="div"
             axis="y"

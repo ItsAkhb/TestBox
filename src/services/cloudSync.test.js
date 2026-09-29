@@ -540,6 +540,138 @@ test("push increments rev when the column exists", async () => {
   assert.equal(uploads[0].name, "Pushed");
 });
 
+test("push writes subject_ids when the column exists and NULL on unassign", async () => {
+  const { sandbox, cloud } = await pullClient();
+  const folders = sandbox.getFolders();
+  folders[0] = {
+    ...folders[0],
+    subjectIds: ["s1", "s2"],
+    subjectId: "s1",
+  };
+  assert.equal(sandbox.saveFolders(folders), true);
+
+  vm.runInContext(
+    "schemaCapabilities.foldersSubjectId = true; schemaCapabilities.foldersSubjectIds = true; schemaCapabilities.probed = true;",
+    cloud
+  );
+  const uploads = [];
+  cloud.supabase = {
+    from(table) {
+      return {
+        select() {
+          return { limit: async () => ({ error: null }) };
+        },
+        async upsert(row) {
+          assert.equal(table, "folders");
+          uploads.push({ ...row });
+          return { error: null };
+        },
+      };
+    },
+  };
+
+  await cloud.syncLocalToCloud("tombstone-user", {
+    dirty: { ...cloud.getDirtyState(), folders: true, deletes: [] },
+  });
+  assert.equal(uploads.length, 1);
+  // vm-realm arrays are not reference-equal to host arrays — copy first.
+  assert.deepEqual([...uploads[0].subject_ids], ["s1", "s2"]);
+  assert.equal(uploads[0].subject_id, "s1");
+
+  // Unassign must write an explicit NULL — omitting the key would
+  // leave the previous cloud value stale.
+  const cleared = sandbox.getFolders();
+  cleared[0] = { ...cleared[0], subjectIds: [], subjectId: null };
+  assert.equal(sandbox.saveFolders(cleared), true);
+  await cloud.syncLocalToCloud("tombstone-user", {
+    dirty: { ...cloud.getDirtyState(), folders: true, deletes: [] },
+  });
+  assert.equal(uploads.length, 2);
+  assert.equal(uploads[1].subject_ids, null);
+  assert.equal(uploads[1].subject_id, null);
+});
+
+test("push omits subject_ids when the schema has no such column", async () => {
+  const { sandbox, cloud } = await pullClient();
+  const folders = sandbox.getFolders();
+  folders[0] = { ...folders[0], name: "No capability row" };
+  assert.equal(sandbox.saveFolders(folders), true);
+
+  vm.runInContext("schemaCapabilities.probed = true;", cloud);
+  const uploads = [];
+  cloud.supabase = {
+    from(table) {
+      return {
+        select() {
+          return { limit: async () => ({ error: null }) };
+        },
+        async upsert(row) {
+          assert.equal(table, "folders");
+          uploads.push({ ...row });
+          return { error: null };
+        },
+      };
+    },
+  };
+  await cloud.syncLocalToCloud("tombstone-user", {
+    dirty: { ...cloud.getDirtyState(), folders: true, deletes: [] },
+  });
+  assert.equal(uploads.length, 1);
+  assert.equal("subject_ids" in uploads[0], false);
+  assert.equal("subject_id" in uploads[0], false);
+});
+
+test("a clean pull adopts cloud subject_ids and mirrors the primary subject", async () => {
+  const { sandbox, cloud } = await pullClient();
+  assert.equal(sandbox.updateFolder(10, { name: "Stale local" }), true);
+  sandbox.clearDirtySection("folders");
+  vm.runInContext(
+    "schemaCapabilities.foldersRev = true; schemaCapabilities.foldersSubjectId = true; schemaCapabilities.foldersSubjectIds = true; schemaCapabilities.probed = true;",
+    cloud
+  );
+  cloud.getCloudFolders = async () => [
+    {
+      id: 10,
+      name: "Newer cloud",
+      created_at: "2026-09-17T00:00:00Z",
+      rev: 5,
+      subject_id: "a",
+      subject_ids: ["a", "b"],
+    },
+  ];
+  await cloud.syncCloudToLocal("tombstone-user");
+  const folder = sandbox.getFolders()[0];
+  assert.equal(folder.name, "Newer cloud");
+  assert.deepEqual([...folder.subjectIds], ["a", "b"]);
+  assert.equal(folder.subjectId, "a");
+  assert.equal(sandbox.hasPendingLocalChanges(), false);
+});
+
+test("a cloud-only folder derives subject_ids from the legacy subject_id", async () => {
+  const { sandbox, cloud } = await pullClient();
+  vm.runInContext(
+    "schemaCapabilities.foldersSubjectId = true; schemaCapabilities.foldersSubjectIds = true; schemaCapabilities.probed = true;",
+    cloud
+  );
+  cloud.getCloudFolders = async () => [
+    {
+      id: 99,
+      name: "Arrives from cloud",
+      created_at: "2026-09-17T00:00:00Z",
+      subject_id: "x",
+      subject_ids: null,
+    },
+  ];
+  await cloud.syncCloudToLocal("tombstone-user");
+  const folder = sandbox
+    .getFolders()
+    .find((item) => String(item.id) === "99");
+  assert.ok(folder, "cloud-only folder must be adopted");
+  assert.deepEqual([...folder.subjectIds], ["x"]);
+  assert.equal(folder.subjectId, "x");
+});
+
+
 test("an exam config edit during question download is not overwritten by cloud", async () => {
   const { sandbox, cloud } = await pullClient();
   assert.equal(

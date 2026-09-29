@@ -93,10 +93,19 @@
 .folder-info h3 {
   margin: 0 0 4px;
 
+  /* v2.2.0 §3 — long names wrap and stay readable; ellipsis only kicks
+     in past 3 lines so cards keep a uniform, non-excessive height.
+     `.folder-info` (this file + redesign-organization.css) clamps the
+     box so nothing can paint outside the card. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+
+  line-height: 1.4;
 
   color: var(--text);
 
