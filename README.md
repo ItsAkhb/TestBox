@@ -115,7 +115,13 @@ Never commit environment files or private keys to the repository.
 
 ## Current Status
 
-**v2.2.0-beta.4 released.**
+**v2.2.0-beta.5 released.**
+
+What's new in v2.2.0-beta.5 (navigation data state and Android backup export):
+
+* **In-app navigation never leaves a page blank** — the route transition no longer relies on a JS exit animation that could wedge with the page stuck at zero opacity; every page now enters via a CSS animation tied to the route key, so content is visible after every client-side navigation
+* **Android JSON backup reaches a real file** — the backup export on Android opens the system file picker (SAF) and writes the JSON to the chosen document; cancelling the picker reports nothing instead of a false success
+* **Web and Windows export unchanged** — same dated `testbox-backup-YYYY-MM-DD.json` download with success/error toasts
 
 What's new in v2.2.0-beta.4 (folder sorting views and multi-subject folders):
 

@@ -19,6 +19,7 @@ import { useSettings } from "../context/SettingsContext";
 import { useTranslation } from "../i18n";
 import { useToast } from "../context/ToastContext";
 import { searchCities } from "../services/weather";
+import { backupFilename, saveBackup } from "../services/backupExport";
 import Icon from "../components/ui/Icon";
 import PageHeader from "../components/ui/PageHeader";
 import Toggle from "../components/ui/Toggle";
@@ -234,22 +235,14 @@ function Settings() {
     }
   }
 
-  function exportBackup() {
+  async function exportBackup() {
     try {
       const backup = createBackup();
       const json = JSON.stringify(backup, null, 2);
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      const date = new Date().toISOString().slice(0, 10);
-      link.href = url;
-      link.download = `testbox-backup-${date}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      await saveBackup({ json, filename: backupFilename() });
       showToast(t("settings.export.success"), "success");
     } catch (error) {
+      if (error?.code === "cancelled") return;
       console.error("Failed to export backup", error);
       showToast(t("settings.export.failed"), "error");
     }

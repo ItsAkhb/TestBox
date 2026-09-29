@@ -100,6 +100,24 @@ export function isNativePlatform() {
   return isNative();
 }
 
+let saveFilePlugin = null;
+
+/**
+ * Save a JSON document through Android's system save dialog
+ * (ACTION_CREATE_DOCUMENT): the user picks the destination, the native
+ * plugin writes the file and only then resolves. Rejects with
+ * code "cancelled" when the user backs out of the picker — callers must
+ * not report success in that case. Only called on native platforms
+ * (guarded by saveBackup), but registration itself is safe anywhere.
+ */
+export async function saveJsonToSystemPicker({ json, filename }) {
+  if (!saveFilePlugin) {
+    const { registerPlugin } = await import("@capacitor/core");
+    saveFilePlugin = registerPlugin("SaveFile");
+  }
+  return saveFilePlugin.save({ json, filename });
+}
+
 /**
  * Open an OAuth URL in the platform-appropriate surface:
  * - Android: Capacitor Browser (Chrome Custom Tab) — with the Google
