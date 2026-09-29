@@ -95,6 +95,25 @@ const translations = {
     "folders.delete.confirm": "این فولدر و آزمون‌های داخلش حذف شوند؟",
     "folders.delete.failed": "حذف فولدر انجام نشد.",
 
+    // Folder sorting / views / multi-subject
+    "folders.sort.label": "مرتب‌سازی",
+    "folders.sort.name-asc": "نام (صعودی)",
+    "folders.sort.name-desc": "نام (نزولی)",
+    "folders.sort.created-asc": "قدیمی‌ترین ایجاد",
+    "folders.sort.created-desc": "جدیدترین ایجاد",
+    "folders.sort.updated-asc": "قدیمی‌ترین ویرایش",
+    "folders.sort.updated-desc": "جدیدترین ویرایش",
+    "folders.sort.custom": "سفارشی (دستی)",
+    "folders.sort.saveFailed": "ذخیرهٔ تنظیمات انجام نشد.",
+    "folders.view.label": "نمایش",
+    "folders.view.cards": "کارتی",
+    "folders.view.list": "فهرستی",
+    "folders.order.up": "انتقال به بالا",
+    "folders.order.down": "انتقال به پایین",
+    "folders.order.hint": "برای جابه‌جایی بکشید یا از فلش‌ها استفاده کنید",
+    "folders.subjects.title": "دروس فولدر",
+    "folders.subjects.edit": "ویرایش درس‌ها",
+
     // Folder (single)
     "folder.back": "← فولدرها",
     "folder.examsCount": "آزمون",
@@ -607,6 +626,25 @@ const translations = {
     "folders.rename.failed": "Failed to rename folder.",
     "folders.delete.confirm": "Delete this folder and all exams inside it?",
     "folders.delete.failed": "Failed to delete folder.",
+
+    // Folder sorting / views / multi-subject
+    "folders.sort.label": "Sort",
+    "folders.sort.name-asc": "Name A → Z",
+    "folders.sort.name-desc": "Name Z → A",
+    "folders.sort.created-asc": "Created oldest first",
+    "folders.sort.created-desc": "Created newest first",
+    "folders.sort.updated-asc": "Updated oldest first",
+    "folders.sort.updated-desc": "Updated newest first",
+    "folders.sort.custom": "Custom (manual)",
+    "folders.sort.saveFailed": "Failed to save preference.",
+    "folders.view.label": "View",
+    "folders.view.cards": "Cards",
+    "folders.view.list": "List",
+    "folders.order.up": "Move up",
+    "folders.order.down": "Move down",
+    "folders.order.hint": "Drag rows or use the arrows to reorder",
+    "folders.subjects.title": "Folder subjects",
+    "folders.subjects.edit": "Edit subjects",
 
     // Folder (single)
     "folder.back": "← Folders",

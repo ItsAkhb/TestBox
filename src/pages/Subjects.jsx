@@ -6,6 +6,7 @@ import {
   updateSubject,
   deleteSubject,
   getFolders,
+  getFolderSubjectIds,
 generateId,} from "../services/dataService";
 import { useTranslation } from "../i18n";
 import { useToast } from "../context/ToastContext";
@@ -40,8 +41,12 @@ function Subjects() {
   }
 
   function getFolderCount(subjectId) {
+    // Membership count: multi-subject folders count toward every subject
+    // they belong to (getFolderSubjectIds also covers legacy subjectId-only
+    // folders).
     return folders.filter(
-      (f) => f.subjectId != null && String(f.subjectId) === String(subjectId)
+      (f) =>
+        getFolderSubjectIds(f).some((sid) => String(sid) === String(subjectId))
     ).length;
   }
 

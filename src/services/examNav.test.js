@@ -238,3 +238,137 @@ test("pages: i18n keys exist in both Persian and English", async () => {
     assert.ok(enBlock.includes(`"${key}"`), `missing en key: ${key}`);
   }
 });
+
+// =========================================================
+// Practice / Exercise (Beta 4 — both content types, §17 matrix)
+// =========================================================
+
+test("practice: §17 matrix — 1 q, one full page, multi full, partial final, large set", () => {
+  // 1 question
+  assert.deepEqual(buildPageList(range(1, 1)), [{ page: 1, from: 1, to: 1 }]);
+  // exactly one full page
+  assert.deepEqual(buildPageList(range(1, 100)), [{ page: 1, from: 1, to: 100 }]);
+  // multiple full pages
+  const full = buildPageList(range(1, 300));
+  assert.equal(full.length, 3);
+  assert.deepEqual(full[2], { page: 3, from: 201, to: 300 });
+  // partial final page — no empty trailing page, no nonexistent questions
+  const partial = buildPageList(range(1, 125));
+  assert.equal(partial.length, 2);
+  assert.deepEqual(partial[1], { page: 2, from: 101, to: 125 });
+  // large practice set
+  const large = buildPageList(range(1, 5000));
+  assert.equal(large.length, 50);
+  assert.deepEqual(large[0], { page: 1, from: 1, to: 100 });
+  assert.deepEqual(large[49], { page: 50, from: 4901, to: 5000 });
+  // page count is always ceil(n / pageSize), for every structural size
+  for (const n of [1, 99, 100, 101, 500, 1000, 5000, 5001]) {
+    assert.equal(
+      buildPageList(range(1, n)).length,
+      Math.ceil(n / QUESTIONS_PER_PAGE),
+      `ceil(${n}/100)`
+    );
+  }
+  // selecting a page targets its first question (identity used by jumpToQuestion)
+  const nums = range(1, 5000);
+  for (const p of large) {
+    assert.equal(
+      Math.floor(nums.indexOf(p.from) / QUESTIONS_PER_PAGE) + 1,
+      p.page
+    );
+  }
+});
+
+test("practice: Pages entry lives in the shared pagination footer (un-gated by mode)", async () => {
+  const exam = await read("../pages/Exam.jsx");
+  const footStart = exam.indexOf('<div className="exam-pagination">');
+  assert.ok(footStart > -1, "shared pagination footer exists");
+  const footEnd = exam.indexOf('id="exam-note"', footStart);
+  assert.ok(footEnd > footStart, "footer located");
+  const foot = exam.slice(footStart, footEnd);
+  assert.ok(foot.includes("exam-pagination-pages"), "footer Pages button present");
+  assert.ok(foot.includes("setShowPages(true)"), "footer button opens the Pages modal");
+  assert.ok(
+    foot.includes('aria-haspopup="dialog"') && foot.includes("aria-expanded={showPages}"),
+    "footer button announced as a dialog trigger"
+  );
+  assert.ok(
+    !/isActiveExam|isExamMode|isReviewMode/.test(foot),
+    "footer is not gated by exam/practice/review mode"
+  );
+  const gate = exam.slice(Math.max(0, footStart - 200), footStart);
+  assert.ok(gate.includes("totalPages > 1"), "gated only by having multiple pages");
+  // practice renders inside the same workspace
+  assert.ok(exam.includes("mode-badge is-practice"), "practice badge in same workspace");
+  // focusbar keeps its own entry for exams — exactly two call sites
+  assert.equal(
+    (exam.match(/setShowPages\(true\)/g) || []).length,
+    2,
+    "focusbar + footer entry points"
+  );
+});
+
+test("practice: page slices are computed without mode gates (shared model)", async () => {
+  const exam = await read("../pages/Exam.jsx");
+  const start = exam.indexOf("const totalPages =");
+  assert.ok(start > -1, "totalPages memo present");
+  const end = exam.indexOf("useEffect", start);
+  const block = exam.slice(start, end);
+  assert.ok(block.includes("QUESTIONS_PER_PAGE"), "slices use the shared page size");
+  assert.ok(
+    block.includes("visibleQuestionNumbers"),
+    "same visible slice feeds exam and practice rows"
+  );
+  assert.ok(
+    !/isActiveExam|isExamMode|isReviewMode/.test(block),
+    "slice math has no mode condition"
+  );
+});
+
+test("practice: jump moves only current question/page — no answer/note/timer state", async () => {
+  const exam = await read("../pages/Exam.jsx");
+  const start = exam.indexOf("function jumpToQuestion");
+  assert.ok(start > -1, "jumpToQuestion present");
+  const end = exam.indexOf("// Keyboard answering:", start);
+  assert.ok(end > start, "jump body located via stable marker");
+  const body = exam.slice(start, end);
+  for (const call of [
+    "setShowNavigator(false)",
+    "setShowPages(false)",
+    "setCurrentQuestion(questionNumber)",
+    "setCurrentPage(targetPage)",
+  ]) {
+    assert.ok(body.includes(call), `jump performs ${call}`);
+  }
+  for (const forbidden of [
+    "setAnswers",
+    "setNote(",
+    "setResults",
+    "setUnresolved",
+    "setTimer",
+    "handleNoteChange",
+    "answers[",
+    "unresolvedList",
+    "results[",
+  ]) {
+    assert.ok(!body.includes(forbidden), `jump must not touch ${forbidden}`);
+  }
+});
+
+test("practice: prev/next footer navigation unchanged; modal rendered outside mode ternaries", async () => {
+  const exam = await read("../pages/Exam.jsx");
+  assert.ok(exam.includes('t("exam.pagination.previous")'), "previous button intact");
+  assert.ok(exam.includes('t("exam.pagination.next")'), "next button intact");
+  assert.equal(
+    (exam.match(/setCurrentPage\(\s*\(page\)/g) || []).length,
+    2,
+    "both footer arrows still step pages"
+  );
+  const renderAt = exam.indexOf("<PagesNavigator");
+  assert.ok(renderAt > -1, "PagesNavigator rendered");
+  assert.equal((exam.match(/<PagesNavigator/g) || []).length, 1, "single modal instance");
+  assert.ok(
+    renderAt > exam.indexOf('id="exam-note"'),
+    "modal rendered at root level (outside focusbar/header ternaries)"
+  );
+});

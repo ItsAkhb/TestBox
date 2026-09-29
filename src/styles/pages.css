@@ -770,6 +770,23 @@
     none;
 }
 
+/* Shared entry point to the Pages navigator — lives in the pagination
+   footer so practice/review sheets reach it too (the focusbar variant
+   only renders for active exams). */
+.exam-pagination-pages {
+  display:
+    inline-flex;
+
+  align-items:
+    center;
+
+  gap:
+    6px;
+
+  min-height:
+    40px;
+}
+
 
 /* =========================================================
    Exam Note
@@ -1384,6 +1401,11 @@
   .exam-pagination {
     gap:
       8px;
+  }
+
+  .exam-pagination-pages {
+    min-height:
+      44px;
   }
 
   .modal-overlay {

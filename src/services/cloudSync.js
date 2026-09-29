@@ -324,7 +324,12 @@ async function syncFolder(
     name: folder.name,
     created_at:
       folder.createdAt,
+    // Real edit timestamp (stamp of updateFolder) so the cloud column
+    // reflects actual modifications, not push time; legacy folders fall
+    // back to createdAt (never edited).
     updated_at:
+      folder.updatedAt ||
+      folder.createdAt ||
       new Date().toISOString(),
   };
 
@@ -539,7 +544,12 @@ async function syncExam(
         : "",
     created_at:
       exam.createdAt,
+    // Edit timestamp follows updateFolder/updateExam stamping (see
+    // syncFolder) — required for the "Updated" sort to agree across
+    // devices after a pull.
     updated_at:
+      exam.updatedAt ||
+      exam.createdAt ||
       new Date().toISOString(),
   };
 
@@ -1073,6 +1083,10 @@ function buildLocalExam(
 
     createdAt:
       cloudExam.created_at,
+
+    ...(cloudExam.updated_at != null
+      ? { updatedAt: cloudExam.updated_at }
+      : {}),
   };
 
   if (schemaCapabilities.examsType) {
@@ -1776,6 +1790,12 @@ function mergeFolders(localFolders, incomingCloudFolders, dirtyState, race = {})
           ? cloudFolder.subject_id
           : folder.subjectId ?? null,
       createdAt: cloudFolder.created_at ?? folder.createdAt,
+      // Cloud is authoritative in this branch (rev <= cloud rev), so its
+      // edit timestamp wins when present; otherwise the local stamp from
+      // the spread survives.
+      ...(cloudFolder.updated_at != null
+        ? { updatedAt: cloudFolder.updated_at }
+        : {}),
       ...(schemaCapabilities.foldersRev && cloudFolder.rev != null
         ? { rev: Number(cloudFolder.rev) }
         : {}),
@@ -1795,6 +1815,9 @@ function mergeFolders(localFolders, incomingCloudFolders, dirtyState, race = {})
             ? folder.subject_id
             : null,
         createdAt: folder.created_at,
+        ...(folder.updated_at != null
+          ? { updatedAt: folder.updated_at }
+          : {}),
         ...(schemaCapabilities.foldersRev && folder.rev != null
           ? { rev: Number(folder.rev) }
           : {}),

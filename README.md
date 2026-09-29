@@ -115,7 +115,16 @@ Never commit environment files or private keys to the repository.
 
 ## Current Status
 
-**v2.2.0-beta.3 released.**
+**v2.2.0-beta.4 released.**
+
+What's new in v2.2.0-beta.4 (folder sorting views and multi-subject folders):
+
+* **Folder sorting** — sort folders by name (Persian/numeric collator), created, updated, or a custom manual order; the choice is saved per user
+* **List or card view** — switch between a compact list and a card grid on the Folders page; the view persists across reloads
+* **Multi-subject folders** — assign more than one subject to a folder; chips appear on cards and list rows (primary subject syncs to the cloud, extra subjects stay local-only in this beta)
+* **Exam sorting per folder** — each folder remembers its own exam sort mode, including a custom manual order with drag-reorder in list view and ↑/↓ buttons
+* **Subject filter on the Folders page** — one click to show only that subject's folders, only unassigned folders, or everything
+* **Edit subjects straight from a list row** — the chip button opens the subject editor without leaving the list
 
 What's new in v2.2.0-beta.3 (sign-in reliability + exam navigation):
 

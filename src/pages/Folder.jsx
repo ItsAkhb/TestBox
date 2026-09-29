@@ -4,6 +4,7 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
+import { Reorder } from "framer-motion";
 
 import {
   getFolders,
@@ -15,8 +16,17 @@ import {
   getExamData,
   saveExamData,
   getSettings,
+  saveSettings,
   MAX_QUESTIONS,
 generateId,} from "../services/dataService";
+import {
+  sortItems,
+  buildCustomOrder,
+  mergeVisibleOrder,
+  moveItem,
+  SORT_MODES,
+  DEFAULT_SORT_MODE,
+} from "../services/sortOrder";
 import { isExamAttemptActive } from "../services/timerUi";
 import { findLastAnsweredQuestion } from "../services/examNav";
 import { useTranslation } from "../i18n";
@@ -110,7 +120,8 @@ function AnswerKeyGrid({ questionCount, customNumbering, startNumber, useStep, s
 function Folder() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const locale = language === "en" ? "en" : "fa";
   const { showToast } = useToast();
 
   const [dataVersion, setDataVersion] =
@@ -183,7 +194,93 @@ function Folder() {
     );
   }, [folders, id]);
 
-  const exams = useMemo(() => {
+  // Per-folder exam sort mode + custom order, keyed by folder id inside
+  // the existing settings blob (each folder owns its own state — promt
+  // §2). prefsVersion re-reads settings after a preference write.
+  const [prefsVersion, setPrefsVersion] = useState(0);
+  const examPrefs = useMemo(() => {
+    let settings;
+    try {
+      settings = getSettings() || {};
+    } catch {
+      settings = {};
+    }
+    const sorts =
+      settings.examSorts && typeof settings.examSorts === "object"
+        ? settings.examSorts
+        : {};
+    const orders =
+      settings.examOrders && typeof settings.examOrders === "object"
+        ? settings.examOrders
+        : {};
+    const mode = SORT_MODES.includes(sorts[id])
+      ? sorts[id]
+      : DEFAULT_SORT_MODE;
+    const order = Array.isArray(orders[id]) ? orders[id] : [];
+    // version participates so the memo invalidates after a settings
+    // write (it is the settings-write counter, not part of the value).
+    return { mode, order, version: prefsVersion };
+  }, [id, prefsVersion]);
+
+  function saveExamPrefs(patch) {
+    try {
+      const ok = saveSettings({ ...getSettings(), ...patch });
+      if (!ok) showToast(t("folders.sort.saveFailed"), "error");
+      setPrefsVersion((value) => value + 1);
+      return ok;
+    } catch {
+      showToast(t("folders.sort.saveFailed"), "error");
+      return false;
+    }
+  }
+
+  function handleExamSortChange(event) {
+    const mode = event.target.value;
+    if (!SORT_MODES.includes(mode)) return;
+    const settings = getSettings() || {};
+    const sorts =
+      settings.examSorts && typeof settings.examSorts === "object"
+        ? settings.examSorts
+        : {};
+    saveExamPrefs({ examSorts: { ...sorts, [id]: mode } });
+  }
+
+  // Canonical (all of this folder's exams, storage order) rebuilt at
+  // commit time so filtered/sorted views can't lose entries.
+  function commitExamOrder(newVisible) {
+    const raw = getExams().filter(
+      (exam) => String(exam.folderId) === String(id)
+    );
+    const canonical = buildCustomOrder(raw, examPrefs.order);
+    const merged = mergeVisibleOrder(
+      canonical,
+      exams.map((exam) => String(exam.id)),
+      newVisible.map((exam) => String(exam.id))
+    );
+    const settings = getSettings() || {};
+    const orders =
+      settings.examOrders && typeof settings.examOrders === "object"
+        ? settings.examOrders
+        : {};
+    saveExamPrefs({ examOrders: { ...orders, [id]: merged } });
+  }
+
+  function handleMoveExamOrder(exam, delta) {
+    const from = exams.findIndex(
+      (item) => String(item.id) === String(exam.id)
+    );
+    if (from === -1) return;
+    const to = from + delta;
+    if (to < 0 || to >= exams.length) return;
+    // Copy before handing the array to the pure reorder helper so the
+    // compiler can still memoize the derived maps over `exams`.
+    commitExamOrder(moveItem([...exams], from, to));
+  }
+
+  // Raw folder exams in storage order. The sort-independent source for
+  // derived maps (kept separate from the sorted `exams` view so manual
+  // memoization stays provably immutable for the compiler).
+  const folderExamList = useMemo(() => {
     const allExams =
       getExams();
 
@@ -194,13 +291,22 @@ function Folder() {
     );
   }, [id, dataVersion]);
 
+  // Sorted view over the raw list. Deliberately NOT a useMemo: the sort
+  // is cheap (folder-sized), and the raw heavy list stays memoized above.
+  const exams = sortItems(
+    [...folderExamList],
+    examPrefs.mode,
+    examPrefs.order,
+    locale
+  );
+
   // Active normal-exam attempts on this folder's cards. Remaining time is
   // read from the SAME testbox-timer-${id} record useTimer owns (display
-  // only — no second timer engine). Depends on `exams` so a dataVersion
-  // refresh (return from exam) recomputes the badge.
+  // only — no second timer engine). Depends on `folderExamList` so a
+  // dataVersion refresh (return from exam) recomputes the badge.
   const activeExamIds = useMemo(() => {
     const map = {};
-    for (const exam of exams) {
+    for (const exam of folderExamList) {
       if (exam?.type !== "exam") continue;
       try {
         const ed = getExamData(exam.id);
@@ -212,14 +318,15 @@ function Folder() {
       }
     }
     return map;
-  }, [exams]);
+  }, [folderExamList]);
 
   // Highest answered question per exam (persisted answers — the same
   // record the exam page writes), for the card's "last answered" jump.
-  // Recomputes with `exams`, which refreshes on dataVersion changes.
+  // Recomputes with `folderExamList`, which refreshes on dataVersion
+  // changes.
   const lastAnsweredMap = useMemo(() => {
     const map = {};
-    for (const exam of exams) {
+    for (const exam of folderExamList) {
       try {
         const last = findLastAnsweredQuestion(getExamData(exam.id)?.answers);
         if (last !== null) {
@@ -230,7 +337,7 @@ function Folder() {
       }
     }
     return map;
-  }, [exams]);
+  }, [folderExamList]);
 
   // Effective question numbers for the open form — the answer-key grid
   // and the save path both consume this, so custom numbering can never
@@ -647,6 +754,181 @@ function Folder() {
     refreshData();
   }
 
+  function examCardBody(exam, index) {
+    const lastAnswered = lastAnsweredMap[String(exam.id)] ?? null;
+    return (
+      <>
+        <Link
+          to={`/exam/${exam.id}`}
+          className="exam-list-main"
+        >
+
+          <div className="exam-list-icon">
+            <Icon
+              name={exam.type === "exam" ? "fileText" : "bookOpen"}
+              size={20}
+            />
+          </div>
+
+          <div className="exam-list-info">
+
+            <h3>
+              {exam.name}
+              <Badge
+                variant={exam.type === "exam" ? "primary" : "muted"}
+                size="sm"
+              >
+                {exam.type === "exam"
+                  ? t("exam.type.exam")
+                  : t("exam.type.practice")}
+              </Badge>
+              {activeExamIds[String(exam.id)] && (
+                <Badge
+                  variant="primary"
+                  size="sm"
+                  className="exam-list-active-badge"
+                  title={t("exam.start.inProgress")}
+                >
+                  <Icon name="timer" size={12} />
+                  {t("exam.start.inProgress")}
+                </Badge>
+              )}
+            </h3>
+
+            <div className="exam-list-meta">
+
+              <span>
+                {exam.questionCount} {t("exam.questionCount")}
+              </span>
+
+              {exam.customNumbering && (
+                <>
+                  <span className="meta-dot">
+                    •
+                  </span>
+
+                  <span>
+                    {t("exam.customNumbering")}
+                  </span>
+                </>
+              )}
+
+              {exam.negativeMarking && (
+                <>
+                  <span className="meta-dot">
+                    •
+                  </span>
+
+                  <span>
+                    {t("exam.negativeMarking")}
+                  </span>
+                </>
+              )}
+
+            </div>
+
+          </div>
+
+          <span className="exam-list-arrow">
+            <Icon name="arrowBack" size={15} />
+          </span>
+
+        </Link>
+
+        <div className="exam-actions">
+
+          {examPrefs.mode === "custom" && (
+            <>
+              <button
+                type="button"
+                disabled={index === 0}
+                title={t("folders.order.up")}
+                aria-label={t("folders.order.up")}
+                onClick={() => handleMoveExamOrder(exam, -1)}
+              >
+                <Icon name="arrowUp" size={15} />
+              </button>
+
+              <button
+                type="button"
+                disabled={index === exams.length - 1}
+                title={t("folders.order.down")}
+                aria-label={t("folders.order.down")}
+                onClick={() => handleMoveExamOrder(exam, 1)}
+              >
+                <Icon name="arrowDown" size={15} />
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            disabled={lastAnswered === null}
+            title={
+              lastAnswered !== null
+                ? t("exam.lastAnswered")
+                : t("exam.lastAnswered.none")
+            }
+            aria-label={
+              lastAnswered !== null
+                ? t("exam.lastAnswered")
+                : t("exam.lastAnswered.none")
+            }
+            onClick={() => {
+              if (lastAnswered !== null) {
+                navigate(
+                  `/exam/${exam.id}?question=${lastAnswered}`
+                );
+              }
+            }}
+          >
+            <Icon name="clock" size={15} />
+          </button>
+
+          <button
+            type="button"
+            title={t("common.edit")}
+            aria-label={t("exam.edit.title")}
+            onClick={() =>
+              openEditModal(
+                exam
+              )
+            }
+          >
+            <Icon name="pen" size={15} />
+          </button>
+
+          <button
+            type="button"
+            title={t("exam.move.prompt")}
+            aria-label={t("exam.move.prompt")}
+            onClick={() =>
+              handleMoveExam(
+                exam
+              )
+            }
+          >
+            <Icon name="folder" size={15} />
+          </button>
+
+          <button
+            type="button"
+            title={t("common.delete")}
+            aria-label={t("exam.delete.confirm")}
+            onClick={() =>
+              handleDeleteExam(
+                exam
+              )
+            }
+          >
+            <Icon name="trash" size={15} />
+          </button>
+
+        </div>
+      </>
+    );
+  }
+
   if (!folder) {
     return (
       <section className="page-section">
@@ -708,6 +990,34 @@ function Folder() {
 
       </div>
 
+      {exams.length > 0 && (
+        <div className="folders-toolbar exam-toolbar">
+          <label className="folders-sort">
+            <span className="folders-sort-label">
+              {t("folders.sort.label")}
+            </span>
+            <select
+              className="folders-sort-select"
+              value={examPrefs.mode}
+              onChange={handleExamSortChange}
+              aria-label={t("folders.sort.label")}
+            >
+              {SORT_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {t(`folders.sort.${mode}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {examPrefs.mode === "custom" && (
+            <span className="folders-sort-hint">
+              {t("folders.order.hint")}
+            </span>
+          )}
+        </div>
+      )}
+
       {exams.length === 0 ? (
 
         <div className="empty-state folder-empty-state">
@@ -736,167 +1046,39 @@ function Folder() {
 
         </div>
 
+      ) : examPrefs.mode === "custom" ? (
+
+        <Reorder.Group
+          as="div"
+          axis="y"
+          className="exam-list"
+          values={exams}
+          onReorder={commitExamOrder}
+        >
+          {exams.map((exam, index) => (
+            <Reorder.Item
+              as="div"
+              key={exam.id}
+              value={exam}
+              className="exam-list-card is-reorderable"
+            >
+              {examCardBody(exam, index)}
+            </Reorder.Item>
+          ))}
+        </Reorder.Group>
+
       ) : (
 
         <div className="exam-list">
 
-          {exams.map((exam) => {
-            const lastAnswered = lastAnsweredMap[String(exam.id)] ?? null;
-            return (
-
+          {exams.map((exam, index) => (
             <div
               key={exam.id}
               className="exam-list-card"
             >
-
-              <Link
-                to={`/exam/${exam.id}`}
-                className="exam-list-main"
-              >
-
-                <div className="exam-list-icon">
-                  <Icon
-                    name={exam.type === "exam" ? "fileText" : "bookOpen"}
-                    size={20}
-                  />
-                </div>
-
-                <div className="exam-list-info">
-
-                  <h3>
-                    {exam.name}
-                    <Badge
-                      variant={exam.type === "exam" ? "primary" : "muted"}
-                      size="sm"
-                    >
-                      {exam.type === "exam"
-                        ? t("exam.type.exam")
-                        : t("exam.type.practice")}
-                    </Badge>
-                    {activeExamIds[String(exam.id)] && (
-                      <Badge
-                        variant="primary"
-                        size="sm"
-                        className="exam-list-active-badge"
-                        title={t("exam.start.inProgress")}
-                      >
-                        <Icon name="timer" size={12} />
-                        {t("exam.start.inProgress")}
-                      </Badge>
-                    )}
-                  </h3>
-
-                  <div className="exam-list-meta">
-
-                    <span>
-                      {exam.questionCount} {t("exam.questionCount")}
-                    </span>
-
-                    {exam.customNumbering && (
-                      <>
-                        <span className="meta-dot">
-                          •
-                        </span>
-
-                        <span>
-                          {t("exam.customNumbering")}
-                        </span>
-                      </>
-                    )}
-
-                    {exam.negativeMarking && (
-                      <>
-                        <span className="meta-dot">
-                          •
-                        </span>
-
-                        <span>
-                          {t("exam.negativeMarking")}
-                        </span>
-                      </>
-                    )}
-
-                  </div>
-
-                </div>
-
-                <span className="exam-list-arrow">
-                  <Icon name="arrowBack" size={15} />
-                </span>
-
-              </Link>
-
-              <div className="exam-actions">
-
-                <button
-                  type="button"
-                  disabled={lastAnswered === null}
-                  title={
-                    lastAnswered !== null
-                      ? t("exam.lastAnswered")
-                      : t("exam.lastAnswered.none")
-                  }
-                  aria-label={
-                    lastAnswered !== null
-                      ? t("exam.lastAnswered")
-                      : t("exam.lastAnswered.none")
-                  }
-                  onClick={() => {
-                    if (lastAnswered !== null) {
-                      navigate(
-                        `/exam/${exam.id}?question=${lastAnswered}`
-                      );
-                    }
-                  }}
-                >
-                  <Icon name="clock" size={15} />
-                </button>
-
-                <button
-                  type="button"
-                  title={t("common.edit")}
-                  aria-label={t("exam.edit.title")}
-                  onClick={() =>
-                    openEditModal(
-                      exam
-                    )
-                  }
-                >
-                  <Icon name="pen" size={15} />
-                </button>
-
-                <button
-                  type="button"
-                  title={t("exam.move.prompt")}
-                  aria-label={t("exam.move.prompt")}
-                  onClick={() =>
-                    handleMoveExam(
-                      exam
-                    )
-                  }
-                >
-                  <Icon name="folder" size={15} />
-                </button>
-
-                <button
-                  type="button"
-                  title={t("common.delete")}
-                  aria-label={t("exam.delete.confirm")}
-                  onClick={() =>
-                    handleDeleteExam(
-                      exam
-                    )
-                  }
-                >
-                  <Icon name="trash" size={15} />
-                </button>
-
-              </div>
-
+              {examCardBody(exam, index)}
             </div>
-
-            );
-          })}
+          ))}
 
         </div>
 

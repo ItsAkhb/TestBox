@@ -681,7 +681,12 @@ function isValidFolder(folder) {
     isValidId(folder.id) &&
     typeof folder.name === "string" &&
     folder.name.trim() !== "" &&
-    typeof folder.createdAt === "string"
+    typeof folder.createdAt === "string" &&
+    (folder.updatedAt === undefined ||
+      typeof folder.updatedAt === "string") &&
+    (folder.subjectIds === undefined ||
+      (Array.isArray(folder.subjectIds) &&
+        folder.subjectIds.every((id) => isValidId(id))))
   );
 }
 
@@ -706,8 +711,10 @@ function isValidExam(exam) {
      exam.timerDuration === null ||
      (typeof exam.timerDuration === "number" && exam.timerDuration > 0)) &&
     (exam.tagIds === undefined ||
-     (Array.isArray(exam.tagIds) &&
-      exam.tagIds.every((id) => isValidId(id))))
+      (Array.isArray(exam.tagIds) &&
+        exam.tagIds.every((id) => isValidId(id)))) &&
+    (exam.updatedAt === undefined ||
+      typeof exam.updatedAt === "string")
   );
 }
 
@@ -797,6 +804,26 @@ export function getFolders() {
     : [];
 }
 
+// Multi-subject folders store `subjectIds: [id, …]`; legacy folders only
+// have `subjectId`. Read-time derivation keeps old records fully usable
+// without a destructive migration (promt §8/§17).
+export function getFolderSubjectIds(folder) {
+  if (!isObject(folder)) return [];
+  if (Array.isArray(folder.subjectIds)) return folder.subjectIds;
+  return folder.subjectId != null ? [folder.subjectId] : [];
+}
+
+// Every folder write funnels through here: `subjectId` mirrors the first
+// entry of `subjectIds` (or null) so the synced single `subject_id`
+// column, statistics and older clients keep seeing a valid primary.
+function withSubjectMirror(folder) {
+  if (!Array.isArray(folder.subjectIds)) return folder;
+  return {
+    ...folder,
+    subjectId: folder.subjectIds.length > 0 ? folder.subjectIds[0] : null,
+  };
+}
+
 export function saveFolders(folders) {
   if (!validateFolders(folders)) {
     console.error(
@@ -825,7 +852,8 @@ export function saveFolders(folders) {
 }
 
 export function createFolder(folder) {
-  if (!isValidFolder(folder)) {
+  const normalized = withSubjectMirror(folder);
+  if (!isValidFolder(normalized)) {
     return false;
   }
 
@@ -833,7 +861,7 @@ export function createFolder(folder) {
 
   if (
     folders.some((item) =>
-      idsEqual(item.id, folder.id)
+      idsEqual(item.id, normalized.id)
     )
   ) {
     return false;
@@ -841,7 +869,7 @@ export function createFolder(folder) {
 
   const saved = saveFolders([
     ...folders,
-    folder,
+    normalized,
   ]);
 
   if (saved) {
@@ -876,11 +904,18 @@ export function updateFolder(
     return false;
   }
 
-  const updatedFolder = {
+  const updatedFolder = withSubjectMirror({
     ...folders[index],
     ...updates,
     id: folders[index].id,
-  };
+    // User-edit API stamps updatedAt; callers may pass one explicitly
+    // (e.g. cloud adoption). Sync/restore paths use saveFolders directly
+    // and never run this stamp.
+    updatedAt:
+      updates.updatedAt !== undefined
+        ? updates.updatedAt
+        : new Date().toISOString(),
+  });
 
   if (!isValidFolder(updatedFolder)) {
     return false;
@@ -1114,6 +1149,11 @@ export function updateExam(
     ...exams[index],
     ...updates,
     id: exams[index].id,
+    // Same updatedAt stamping contract as updateFolder.
+    updatedAt:
+      updates.updatedAt !== undefined
+        ? updates.updatedAt
+        : new Date().toISOString(),
   };
 
   if (!isValidExam(updatedExam)) {
@@ -1471,17 +1511,36 @@ export function deleteSubject(subjectId) {
   const remaining = subjects.filter((s) => !idsEqual(s.id, subjectId));
   if (!saveSubjects(remaining)) return false;
 
-  // Unassign folders that referenced this subject
+  // Unassign folders that referenced this subject — both the primary
+  // `subjectId` and any multi-subject `subjectIds` entry, keeping the
+  // primary mirror consistent afterwards.
   const folders = getFolders();
   const affected = folders.filter(
-    (f) => f.subjectId != null && idsEqual(f.subjectId, subjectId)
+    (f) =>
+      (f.subjectId != null && idsEqual(f.subjectId, subjectId)) ||
+      (Array.isArray(f.subjectIds) &&
+        f.subjectIds.some((sid) => idsEqual(sid, subjectId)))
   );
   if (affected.length > 0) {
-    const updatedFolders = folders.map((f) =>
-      f.subjectId != null && idsEqual(f.subjectId, subjectId)
-        ? { ...f, subjectId: null }
-        : f
-    );
+    const updatedFolders = folders.map((f) => {
+      const hasPrimary =
+        f.subjectId != null && idsEqual(f.subjectId, subjectId);
+      const inList =
+        Array.isArray(f.subjectIds) &&
+        f.subjectIds.some((sid) => idsEqual(sid, subjectId));
+      if (!hasPrimary && !inList) return f;
+      if (!Array.isArray(f.subjectIds)) {
+        return hasPrimary ? { ...f, subjectId: null } : f;
+      }
+      const remaining = f.subjectIds.filter(
+        (sid) => !idsEqual(sid, subjectId)
+      );
+      return {
+        ...f,
+        subjectIds: remaining,
+        subjectId: remaining.length > 0 ? remaining[0] : null,
+      };
+    });
     saveFolders(updatedFolders);
   }
 

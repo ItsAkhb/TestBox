@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Reorder } from "framer-motion";
 
 import {
   getFolders,
@@ -9,7 +10,18 @@ import {
   updateFolder,
   deleteFolder,
   getSubjects,
+  getFolderSubjectIds,
+  getSettings,
+  saveSettings,
 generateId,} from "../services/dataService";
+import {
+  sortItems,
+  buildCustomOrder,
+  mergeVisibleOrder,
+  moveItem,
+  SORT_MODES,
+  DEFAULT_SORT_MODE,
+} from "../services/sortOrder";
 import { useTranslation } from "../i18n";
 import { useToast } from "../context/ToastContext";
 import Icon from "../components/ui/Icon";
@@ -18,9 +30,39 @@ import PageHeader from "../components/ui/PageHeader";
 import EmptyState from "../components/ui/EmptyState";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 
+// Sort/view preferences live in the existing per-user settings blob
+// (synced as a whole JSON document) — no second persistence mechanism.
+function readSortPref() {
+  try {
+    const value = getSettings()?.folderSort;
+    return SORT_MODES.includes(value) ? value : DEFAULT_SORT_MODE;
+  } catch {
+    return DEFAULT_SORT_MODE;
+  }
+}
+
+function readViewPref() {
+  try {
+    return getSettings()?.folderView === "list" ? "list" : "card";
+  } catch {
+    return "card";
+  }
+}
+
+function readOrderPref() {
+  try {
+    const value = getSettings()?.folderOrder;
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
 function Folders() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { showToast } = useToast();
+  const locale = language === "en" ? "en" : "fa";
+
   const [folders, setFolders] = useState(() => {
     return getFolders();
   });
@@ -35,20 +77,75 @@ function Folders() {
   const [folderName, setFolderName] =
     useState("");
 
-  const [selectedSubjectId, setSelectedSubjectId] =
-    useState("");
+  const [selectedSubjectIds, setSelectedSubjectIds] =
+    useState([]);
 
   const [filterSubject, setFilterSubject] =
     useState("all");
+
+  const [folderSort, setFolderSort] = useState(readSortPref);
+  const [folderView, setFolderView] = useState(readViewPref);
+  const [folderOrder, setFolderOrder] = useState(readOrderPref);
 
   const [renamingFolder, setRenamingFolder] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [deletingFolderId, setDeletingFolderId] = useState(null);
 
+  const [editingSubjectsFolder, setEditingSubjectsFolder] = useState(null);
+  const [editSubjectIds, setEditSubjectIds] = useState([]);
+
   function refreshFolders() {
     setFolders(getFolders());
     setSubjects(getSubjects());
+  }
+
+  function persistFolderPrefs(patch) {
+    try {
+      const ok = saveSettings({ ...getSettings(), ...patch });
+      if (!ok) showToast(t("folders.sort.saveFailed"), "error");
+      return ok;
+    } catch {
+      showToast(t("folders.sort.saveFailed"), "error");
+      return false;
+    }
+  }
+
+  function handleSortChange(event) {
+    const mode = event.target.value;
+    if (!SORT_MODES.includes(mode)) return;
+    setFolderSort(mode);
+    persistFolderPrefs({ folderSort: mode });
+  }
+
+  function handleViewChange(view) {
+    if (view !== "card" && view !== "list") return;
+    setFolderView(view);
+    persistFolderPrefs({ folderView: view });
+  }
+
+  // Persists a new visible sequence into the global custom order.
+  // Hidden (filtered-out) folders keep their slots — reordering can
+  // only ever change ordering (promt §4).
+  function commitOrder(newVisible) {
+    const canonical = buildCustomOrder(folders, folderOrder);
+    const merged = mergeVisibleOrder(
+      canonical,
+      orderedFolders.map((f) => String(f.id)),
+      newVisible.map((f) => String(f.id))
+    );
+    setFolderOrder(merged);
+    persistFolderPrefs({ folderOrder: merged });
+  }
+
+  function handleMoveFolder(folder, delta) {
+    const from = orderedFolders.findIndex(
+      (f) => String(f.id) === String(folder.id)
+    );
+    if (from === -1) return;
+    const to = from + delta;
+    if (to < 0 || to >= orderedFolders.length) return;
+    commitOrder(moveItem(orderedFolders, from, to));
   }
 
   function handleCreateFolder() {
@@ -59,10 +156,15 @@ function Folders() {
       return;
     }
 
+    const ids = selectedSubjectIds.filter((sid) =>
+      subjects.some((s) => String(s.id) === sid)
+    );
+
     const newFolder = {
       id: generateId(),
       name,
-      subjectId: selectedSubjectId ? selectedSubjectId : null,
+      subjectIds: ids,
+      subjectId: ids.length > 0 ? ids[0] : null,
       createdAt:
         new Date().toISOString(),
     };
@@ -78,8 +180,52 @@ function Folders() {
     refreshFolders();
 
     setFolderName("");
-    setSelectedSubjectId("");
+    setSelectedSubjectIds([]);
     setShowModal(false);
+  }
+
+  function toggleCreateSubject(subjectId) {
+    setSelectedSubjectIds((prev) =>
+      prev.includes(subjectId)
+        ? prev.filter((sid) => sid !== subjectId)
+        : [...prev, subjectId]
+    );
+  }
+
+  function handleOpenSubjects(folder) {
+    setEditingSubjectsFolder(folder);
+    setEditSubjectIds(getFolderSubjectIds(folder).map(String));
+  }
+
+  function toggleEditSubject(subjectId) {
+    setEditSubjectIds((prev) =>
+      prev.includes(subjectId)
+        ? prev.filter((sid) => sid !== subjectId)
+        : [...prev, subjectId]
+    );
+  }
+
+  function handleSubjectsSubmit() {
+    if (!editingSubjectsFolder) return;
+
+    const ids = editSubjectIds.filter((sid) =>
+      subjects.some((s) => String(s.id) === sid)
+    );
+
+    const updated = updateFolder(editingSubjectsFolder.id, {
+      subjectIds: ids,
+      subjectId: ids.length > 0 ? ids[0] : null,
+    });
+
+    setEditingSubjectsFolder(null);
+    setEditSubjectIds([]);
+
+    if (!updated) {
+      showToast(t("folders.subject.assignFailed"), "error");
+      return;
+    }
+
+    refreshFolders();
   }
 
   function handleDeleteFolder(id) {
@@ -145,19 +291,6 @@ function Folders() {
     refreshFolders();
   }
 
-  function handleAssignSubject(folder, subjectId) {
-    const updated = updateFolder(folder.id, {
-      subjectId: subjectId || null,
-    });
-
-    if (!updated) {
-      showToast(t("folders.subject.assignFailed"), "error");
-      return;
-    }
-
-    refreshFolders();
-  }
-
   const subjectById = {};
   subjects.forEach((s) => {
     subjectById[String(s.id)] = s;
@@ -167,17 +300,28 @@ function Folders() {
     filterSubject === "all"
       ? folders
       : filterSubject === "none"
-        ? folders.filter((f) => f.subjectId == null)
-        : folders.filter(
-            (f) =>
-              f.subjectId != null &&
-              String(f.subjectId) === String(filterSubject)
+        ? folders.filter((f) => getFolderSubjectIds(f).length === 0)
+        : folders.filter((f) =>
+            getFolderSubjectIds(f).some(
+              (sid) => String(sid) === String(filterSubject)
+            )
           );
 
-  // Answered/total per folder across its exams → card progress hairlines
+  // Sorting applies after filtering; both views render this same list so
+  // Card/List can never disagree (promt §14).
+  const orderedFolders = sortItems(
+    visibleFolders,
+    folderSort,
+    folderOrder,
+    locale
+  );
+
+  // Answered/total + exam count per folder across its exams → card
+  // progress hairlines and list-view metadata
   const folderProgress = useMemo(() => {
     const map = {};
-    for (const f of folders) map[String(f.id)] = { answered: 0, total: 0 };
+    for (const f of folders)
+      map[String(f.id)] = { answered: 0, total: 0, count: 0 };
     let exams;
     try {
       exams = getExams() || [];
@@ -186,7 +330,8 @@ function Folders() {
     }
     for (const exam of exams) {
       const fid = String(exam.folderId);
-      if (!map[fid]) map[fid] = { answered: 0, total: 0 };
+      if (!map[fid]) map[fid] = { answered: 0, total: 0, count: 0 };
+      map[fid].count += 1;
       map[fid].total += Number(exam.questionCount) || 0;
       try {
         const ed = getExamData(exam.id);
@@ -197,6 +342,225 @@ function Folders() {
     }
     return map;
   }, [folders]);
+
+  function folderPercent(folderId) {
+    const prog = folderProgress[String(folderId)] || {
+      answered: 0,
+      total: 0,
+      count: 0,
+    };
+    return prog.total > 0
+      ? Math.min(Math.round((prog.answered / prog.total) * 100), 100)
+      : 0;
+  }
+
+  // Compact subject chips shared by card footer and list rows; caps at 3
+  // + an overflow counter so many subjects never inflate the card (§10).
+  function subjectChips(folder, max = 3) {
+    const ids = getFolderSubjectIds(folder);
+    if (ids.length === 0) return null;
+    const shown = ids
+      .slice(0, max)
+      .map((sid) => subjectById[String(sid)])
+      .filter(Boolean);
+    return (
+      <>
+        {shown.map((subject) => (
+          <span key={subject.id} className="subject-chip">
+            <span
+              className="filter-dot"
+              style={{
+                backgroundColor: subject.color || "#4A90E2",
+              }}
+              aria-hidden="true"
+            />
+            {subject.name}
+          </span>
+        ))}
+        {ids.length > max && (
+          <span className="subject-chip is-more">
+            +{ids.length - max}
+          </span>
+        )}
+      </>
+    );
+  }
+
+  function actionButtons(folder, index) {
+    return (
+      <>
+        {folderSort === "custom" && (
+          <>
+            <button
+              type="button"
+              onClick={() => handleMoveFolder(folder, -1)}
+              disabled={index === 0}
+              aria-label={t("folders.order.up")}
+              title={t("folders.order.up")}
+            >
+              <Icon name="arrowUp" size={16} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleMoveFolder(folder, 1)}
+              disabled={index === orderedFolders.length - 1}
+              aria-label={t("folders.order.down")}
+              title={t("folders.order.down")}
+            >
+              <Icon name="arrowDown" size={16} />
+            </button>
+          </>
+        )}
+
+        <button
+          type="button"
+          onClick={() =>
+            handleRenameFolder(
+              folder
+            )
+          }
+          aria-label={t("common.edit")}
+        >
+          <Icon name="pen" size={16} />
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            handleDeleteFolder(
+              folder.id
+            )
+          }
+          aria-label={t("common.delete")}
+        >
+          <Icon name="trash" size={16} />
+        </button>
+      </>
+    );
+  }
+
+  function cardInner(folder, index) {
+    const pct = folderPercent(folder.id);
+    const folderSubjectIds = getFolderSubjectIds(folder);
+    const subjectColor =
+      subjectById[String(folderSubjectIds[0])]?.color || null;
+
+    return (
+      <>
+        <Link
+          to={`/folder/${folder.id}`}
+          className="folder-main"
+        >
+          <div
+            className={`folder-icon ${subjectColor ? "is-tinted" : ""}`}
+            style={subjectColor ? {
+              background: `color-mix(in srgb, ${subjectColor} 13%, transparent)`,
+              color: subjectColor,
+              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${subjectColor} 32%, transparent)`,
+            } : undefined}
+          >
+            <Icon name="folder" size={22} />
+          </div>
+
+          <div className="folder-info">
+            <h3 title={folder.name}>
+              {folder.name}
+            </h3>
+          </div>
+        </Link>
+
+        <div className="folder-actions">
+          {actionButtons(folder, index)}
+        </div>
+
+        {subjects.length > 0 && (
+          <div className="folder-subject-row">
+            <button
+              type="button"
+              className="folder-subjects-button"
+              onClick={() => handleOpenSubjects(folder)}
+              aria-label={t("folders.subjects.edit")}
+              title={t("folders.subjects.edit")}
+            >
+              {folderSubjectIds.length === 0 ? (
+                <span className="subject-chip is-empty">
+                  {t("folders.subject.none")}
+                </span>
+              ) : (
+                subjectChips(folder, 3)
+              )}
+            </button>
+          </div>
+        )}
+
+        {pct > 0 && (
+          <span className="folder-progress" aria-hidden="true">
+            <span style={{ width: `${pct}%` }} />
+          </span>
+        )}
+      </>
+    );
+  }
+
+  function rowInner(folder, index) {
+    const prog = folderProgress[String(folder.id)] || {
+      answered: 0,
+      total: 0,
+      count: 0,
+    };
+    const pct = folderPercent(folder.id);
+    const folderSubjectIds = getFolderSubjectIds(folder);
+
+    return (
+      <>
+        <Link
+          to={`/folder/${folder.id}`}
+          className="folder-list-main"
+        >
+          <span className="folder-list-name" title={folder.name}>
+            {folder.name}
+          </span>
+
+          <span className="folder-list-meta">
+            <span>
+              {prog.count} {t("folder.examsCount")}
+            </span>
+            {prog.total > 0 && (
+              <>
+                <span className="meta-dot">•</span>
+                <span>{pct}%</span>
+              </>
+            )}
+          </span>
+        </Link>
+
+        {subjects.length > 0 && (
+          <button
+            type="button"
+            className="folder-list-subjects folder-subjects-button"
+            onClick={() => handleOpenSubjects(folder)}
+            aria-label={t("folders.subjects.edit")}
+            title={t("folders.subjects.edit")}
+          >
+            {folderSubjectIds.length === 0 ? (
+              <span className="subject-chip is-empty">
+                {t("folders.subject.none")}
+              </span>
+            ) : (
+              subjectChips(folder, 3)
+            )}
+          </button>
+        )}
+
+        <div className="folder-list-actions">
+          {actionButtons(folder, index)}
+        </div>
+      </>
+    );
+  }
+
+  const hasFolders = folders.length > 0;
 
   return (
     <section className="page-section">
@@ -217,6 +581,55 @@ function Folders() {
           </button>
         }
       />
+
+      {hasFolders && (
+        <div className="folders-toolbar">
+          <label className="folders-sort">
+            <span className="folders-sort-label">
+              {t("folders.sort.label")}
+            </span>
+            <select
+              className="folders-sort-select"
+              value={folderSort}
+              onChange={handleSortChange}
+              aria-label={t("folders.sort.label")}
+            >
+              {SORT_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {t(`folders.sort.${mode}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div
+            className="view-toggle"
+            role="group"
+            aria-label={t("folders.view.label")}
+          >
+            <button
+              type="button"
+              className={folderView === "card" ? "active" : ""}
+              aria-pressed={folderView === "card"}
+              aria-label={t("folders.view.cards")}
+              title={t("folders.view.cards")}
+              onClick={() => handleViewChange("card")}
+            >
+              <Icon name="grid" size={16} />
+            </button>
+            <button
+              type="button"
+              className={folderView === "list" ? "active" : ""}
+              aria-pressed={folderView === "list"}
+              aria-label={t("folders.view.list")}
+              title={t("folders.view.list")}
+              onClick={() => handleViewChange("list")}
+            >
+              <Icon name="list" size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {subjects.length > 0 && (
         <div className="folders-subject-filter">
@@ -255,7 +668,7 @@ function Folders() {
         </div>
       )}
 
-      {visibleFolders.length === 0 ? (
+      {orderedFolders.length === 0 ? (
         folders.length === 0 ? (
           <EmptyState
             icon={<Icon name="folder" size={26} />}
@@ -275,128 +688,107 @@ function Folders() {
             <p>{t("folders.empty.description")}</p>
           </div>
         )
-      ) : (
-
-        <div className="folder-grid rise-list">
-
-          {visibleFolders.map((folder) => {
-
-            const folderSubject =
-              folder.subjectId != null
-                ? subjectById[String(folder.subjectId)]
-                : null;
-
-            const prog = folderProgress[String(folder.id)] || { answered: 0, total: 0 };
-            const pct = prog.total > 0 ? Math.min(Math.round((prog.answered / prog.total) * 100), 100) : 0;
-            const subjectColor = folderSubject?.color || null;
-
-            return (
-
-              <div
+      ) : folderView === "list" ? (
+        folderSort === "custom" ? (
+          <Reorder.Group
+            as="div"
+            axis="y"
+            className="folder-list rise-list"
+            values={orderedFolders}
+            onReorder={commitOrder}
+          >
+            {orderedFolders.map((folder, index) => (
+              <Reorder.Item
+                as="div"
                 key={folder.id}
-                className="folder-card"
+                value={folder}
+                className="folder-list-row is-reorderable"
               >
-
-                <Link
-                  to={`/folder/${folder.id}`}
-                  className="folder-main"
-                >
-
-                  <div
-                    className={`folder-icon ${subjectColor ? "is-tinted" : ""}`}
-                    style={subjectColor ? {
-                      background: `color-mix(in srgb, ${subjectColor} 13%, transparent)`,
-                      color: subjectColor,
-                      boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${subjectColor} 32%, transparent)`,
-                    } : undefined}
-                  >
-                    <Icon name="folder" size={22} />
-                  </div>
-
-                  <div className="folder-info">
-
-                    <h3 title={folder.name}>
-                      {folder.name}
-                    </h3>
-
-                  </div>
-
-                </Link>
-
-                <div className="folder-actions">
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleRenameFolder(
-                        folder
-                      )
-                    }
-                    aria-label={t("common.edit")}
-                  >
-                    <Icon name="pen" size={16} />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleDeleteFolder(
-                        folder.id
-                      )
-                    }
-                    aria-label={t("common.delete")}
-                  >
-                    <Icon name="trash" size={16} />
-                  </button>
-
-                </div>
-
-                {subjects.length > 0 && (
-                  <div className="folder-subject-row">
-                    <span
-                      className="filter-dot"
-                      style={{ backgroundColor: folderSubject?.color || "var(--border-hover)" }}
-                      aria-hidden="true"
-                    />
-                    <select
-                      className="folder-subject-select"
-                      value={
-                        folder.subjectId != null
-                          ? String(folder.subjectId)
-                          : ""
-                      }
-                      onChange={(event) =>
-                        handleAssignSubject(folder, event.target.value)
-                      }
-                      aria-label={t("folders.subject.assign")}
-                      title={folderSubject?.name || t("folders.subject.assign")}
-                    >
-                      <option value="">
-                        {t("folders.subject.none")}
-                      </option>
-                      {subjects.map((subject) => (
-                        <option key={subject.id} value={String(subject.id)}>
-                          {subject.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {pct > 0 && (
-                  <span className="folder-progress" aria-hidden="true">
-                    <span style={{ width: `${pct}%` }} />
-                  </span>
-                )}
-
+                {rowInner(folder, index)}
+              </Reorder.Item>
+            ))}
+          </Reorder.Group>
+        ) : (
+          <div className="folder-list rise-list">
+            {orderedFolders.map((folder, index) => (
+              <div key={folder.id} className="folder-list-row">
+                {rowInner(folder, index)}
               </div>
+            ))}
+          </div>
+        )
+      ) : (
+        <div className="folder-grid rise-list">
+          {orderedFolders.map((folder, index) => (
+            <div
+              key={folder.id}
+              className="folder-card"
+            >
+              {cardInner(folder, index)}
+            </div>
+          ))}
+        </div>
+      )}
 
+      <Modal
+        open={Boolean(editingSubjectsFolder)}
+        onClose={() => {
+          setEditingSubjectsFolder(null);
+          setEditSubjectIds([]);
+        }}
+        title={t("folders.subjects.title")}
+      >
+        <label className="modal-label">
+          {editingSubjectsFolder?.name}
+        </label>
+
+        <div
+          className="subject-select-chips"
+          role="group"
+          aria-label={t("folders.subjects.title")}
+        >
+          {subjects.map((subject) => {
+            const selected = editSubjectIds.includes(String(subject.id));
+            return (
+              <button
+                key={subject.id}
+                type="button"
+                className={`filter-chip ${selected ? "active" : ""}`}
+                aria-pressed={selected}
+                onClick={() => toggleEditSubject(String(subject.id))}
+              >
+                <span
+                  className="filter-dot"
+                  style={{ backgroundColor: subject.color || "#4A90E2" }}
+                  aria-hidden="true"
+                />
+                {subject.name}
+              </button>
             );
           })}
-
         </div>
 
-      )}
+        <div className="modal-buttons">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => {
+              setEditingSubjectsFolder(null);
+              setEditSubjectIds([]);
+            }}
+          >
+            {t("folders.create.cancel")}
+          </button>
+
+          <button
+            type="button"
+            className="primary-button"
+            onClick={handleSubjectsSubmit}
+          >
+            {t("common.save")}
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         open={showRenameModal}
@@ -468,22 +860,33 @@ function Folders() {
               {t("folders.subject.label")}
             </label>
 
-            <select
-              className="modal-select"
-              value={selectedSubjectId}
-              onChange={(event) =>
-                setSelectedSubjectId(event.target.value)
-              }
+            <div
+              className="subject-select-chips"
+              role="group"
+              aria-label={t("folders.subject.label")}
             >
-              <option value="">
-                {t("folders.subject.none")}
-              </option>
-              {subjects.map((subject) => (
-                <option key={subject.id} value={String(subject.id)}>
-                  {subject.name}
-                </option>
-              ))}
-            </select>
+              {subjects.map((subject) => {
+                const selected = selectedSubjectIds.includes(
+                  String(subject.id)
+                );
+                return (
+                  <button
+                    key={subject.id}
+                    type="button"
+                    className={`filter-chip ${selected ? "active" : ""}`}
+                    aria-pressed={selected}
+                    onClick={() => toggleCreateSubject(String(subject.id))}
+                  >
+                    <span
+                      className="filter-dot"
+                      style={{ backgroundColor: subject.color || "#4A90E2" }}
+                      aria-hidden="true"
+                    />
+                    {subject.name}
+                  </button>
+                );
+              })}
+            </div>
           </>
         )}
 

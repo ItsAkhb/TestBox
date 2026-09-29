@@ -2153,6 +2153,18 @@ function ExamContent({ id }) {
 
           <button
             type="button"
+            className="secondary-button exam-pagination-pages"
+            onClick={() => setShowPages(true)}
+            title={t("exam.pages.hint")}
+            aria-haspopup="dialog"
+            aria-expanded={showPages}
+          >
+            <Icon name="list" size={15} />
+            {t("exam.pages.title")}
+          </button>
+
+          <button
+            type="button"
             className="secondary-button"
             disabled={
               currentPage ===
