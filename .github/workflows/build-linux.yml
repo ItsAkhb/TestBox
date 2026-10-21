@@ -32,6 +32,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Download Electron runtime
+        run: npx install-electron --no
+
+      - name: Verify Electron runtime
+        run: test -f node_modules/electron/dist/electron
+
       - name: Install Linux build tools
         run: |
           sudo apt-get update
