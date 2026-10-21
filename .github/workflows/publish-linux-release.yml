@@ -1,0 +1,51 @@
+
+name: Attach Linux packages to v2.2.0
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: "Run ID of the successful Linux build"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    name: Publish existing Linux packages
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Download artifacts from successful build
+        uses: actions/download-artifact@v8
+        with:
+          pattern: TestBox-linux-*
+          path: release-assets
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.build_run_id }}
+
+      - name: Verify packages
+        shell: bash
+        run: |
+          ls -lh release-assets
+          test -n "$(find release-assets -maxdepth 1 -type f \( \
+            -name '*.deb' -o \
+            -name '*.pacman' -o \
+            -name '*.AppImage' \
+          \) -print -quit)"
+
+      - name: Upload packages to existing Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v2.2.0
+          files: |
+            release-assets/*.deb
+            release-assets/*.pacman
+            release-assets/*.AppImage
+          fail_on_unmatched_files: true
+          overwrite_files: true
