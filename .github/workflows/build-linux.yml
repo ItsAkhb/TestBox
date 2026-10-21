@@ -1,0 +1,58 @@
+name: Build Linux packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [deb, pacman, AppImage]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Linux build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libarchive-tools libfuse2t64
+
+      - name: Build packaged frontend
+        run: npm run build:packaged
+
+      - name: Build Linux package
+        run: >
+          npx electron-builder
+          --linux "${{ matrix.target }}"
+          --x64
+          --publish never
+
+      - name: Upload build output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestBox-linux-${{ matrix.target }}
+          path: release/*
+          if-no-files-found: warn
+          retention-days: 14
