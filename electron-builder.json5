@@ -2,15 +2,16 @@
   // electron-builder config (JSON5 so comments survive)
   appId: "app.testbox.app",
   productName: "TestBox",
+
   directories: {
     output: "release",
     buildResources: "electron/assets",
   },
+
   // Use the Electron dist restored by npm install instead of the
-  // download+extract+rename path — the rename of the freshly extracted
-  // win-unpacked.tmp deterministically fails with EPERM on machines
-  // where Defender/Search indexes new files (handles on the tmp dir).
+  // download+extract+rename path — avoids Windows EPERM errors.
   electronDist: "node_modules/electron/dist",
+
   files: [
     "dist/**/*",
     "electron/main.cjs",
@@ -18,8 +19,16 @@
     "electron/assets/**/*",
     "package.json",
   ],
+
   // The renderer is pure static files; no production node_modules needed.
   asar: true,
+
+  // Linux package metadata
+  linux: {
+    maintainer: "ItsAkhb <ak88hb@gmail.com>",
+    category: "Education",
+  },
+
   win: {
     icon: "electron/assets/icon.ico",
     target: [
@@ -28,9 +37,11 @@
     ],
     artifactName: "TestBox-Setup-${version}.${ext}",
   },
+
   portable: {
     artifactName: "TestBox-Portable-${version}.${ext}",
   },
+
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
