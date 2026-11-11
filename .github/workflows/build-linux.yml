@@ -46,11 +46,50 @@ jobs:
       - name: Verify Electron runtime
         run: test -f node_modules/electron/dist/electron
 
+      
       - name: Install Linux build tools
+        timeout-minutes: 10
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          set -euo pipefail
+
+          MIRROR_FILE="/etc/apt/apt-mirrors.txt"
+
+          if [[ -f "$MIRROR_FILE" ]]; then
+            echo "APT mirrors before change:"
+            cat "$MIRROR_FILE"
+
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' "$MIRROR_FILE"
+
+            echo "APT mirrors after change:"
+            cat "$MIRROR_FILE"
+
+            if grep -q 'azure\.archive\.ubuntu\.com' "$MIRROR_FILE"; then
+              echo "::error::Azure mirror was not removed."
+              exit 1
+            fi
+
+            if ! grep -q 'archive\.ubuntu\.com' "$MIRROR_FILE"; then
+              echo "::error::Ubuntu archive fallback mirror was not found."
+              exit 1
+            fi
+          else
+            echo "::error::APT mirror list was not found."
+            exit 1
+          fi
+
+          APT_OPTS=(
+            -o Acquire::Retries=3
+            -o Acquire::http::Timeout=20
+            -o Acquire::https::Timeout=20
+          )
+
+          sudo apt-get "${APT_OPTS[@]}" update
+
+          sudo apt-get "${APT_OPTS[@]}" install -y \
+            --no-install-recommends \
             libarchive-tools libfuse2t64
+
 
       - name: Build packaged frontend
         env:
