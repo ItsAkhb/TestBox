@@ -79,9 +79,9 @@ jobs:
           fi
 
           APT_OPTS=(
-            -o Acquire::Retries=3
-            -o Acquire::http::Timeout=20
-            -o Acquire::https::Timeout=20
+            -o Acquire::Retries=1
+            -o Acquire::http::Timeout=15
+            -o Acquire::https::Timeout=15
           )
 
           sudo apt-get "${APT_OPTS[@]}" update
