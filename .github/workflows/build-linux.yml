@@ -1,7 +1,15 @@
+
 name: Build Linux packages
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing GitHub Release to update"
+        required: true
+        default: "v2.2.0"
+        type: string
+
   push:
     tags:
       - "v*"
@@ -45,7 +53,21 @@ jobs:
             libarchive-tools libfuse2t64
 
       - name: Build packaged frontend
-        run: npm run build:packaged
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          test -n "$VITE_SUPABASE_URL" || {
+            echo "::error::Missing VITE_SUPABASE_URL"
+            exit 1
+          }
+
+          test -n "$VITE_SUPABASE_PUBLISHABLE_KEY" || {
+            echo "::error::Missing VITE_SUPABASE_PUBLISHABLE_KEY"
+            exit 1
+          }
+
+          npm run build:packaged
 
       - name: Build Linux package
         run: >
@@ -55,10 +77,67 @@ jobs:
           --publish never
 
       - name: Upload build output
-        if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: TestBox-linux-${{ matrix.target }}
-          path: release/*
-          if-no-files-found: warn
+          path: release/*.${{ matrix.target }}
+          if-no-files-found: error
           retention-days: 14
+
+  publish-release:
+    name: Publish Linux packages to Release
+    if: github.event_name == 'workflow_dispatch'
+    needs: linux
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: TestBox-linux-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify all packages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          deb_count=$(find release-assets -maxdepth 1 -type f -iname '*.deb' | wc -l)
+          pacman_count=$(find release-assets -maxdepth 1 -type f -iname '*.pacman' | wc -l)
+          appimage_count=$(find release-assets -maxdepth 1 -type f -iname '*.appimage' | wc -l)
+
+          echo "DEB: $deb_count"
+          echo "Pacman: $pacman_count"
+          echo "AppImage: $appimage_count"
+
+          test "$deb_count" -eq 1
+          test "$pacman_count" -eq 1
+          test "$appimage_count" -eq 1
+
+      - name: Replace assets in existing Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob nocaseglob
+
+          files=(
+            release-assets/*.deb
+            release-assets/*.pacman
+            release-assets/*.appimage
+          )
+
+          echo "Target Release: $RELEASE_TAG"
+          printf 'Uploading: %s\n' "${files[@]}"
+
+          gh release view "$RELEASE_TAG" >/dev/null
+
+          gh release upload "$RELEASE_TAG" \
+            "${files[@]}" \
+            --clobber
