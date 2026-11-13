@@ -46,7 +46,6 @@ jobs:
       - name: Verify Electron runtime
         run: test -f node_modules/electron/dist/electron
 
-      
       - name: Install Linux build tools
         timeout-minutes: 10
         shell: bash
@@ -90,7 +89,6 @@ jobs:
             --no-install-recommends \
             libarchive-tools libfuse2t64
 
-
       - name: Build packaged frontend
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
@@ -133,6 +131,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Download Linux artifacts
         uses: actions/download-artifact@v8
         with:
